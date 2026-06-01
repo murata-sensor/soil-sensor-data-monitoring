@@ -20,7 +20,8 @@ import ftplib
 import io
 import logging
 import os
-from datetime import datetime, timezone, timedelta
+import re
+from datetime import datetime, date, timezone, timedelta
 
 import pandas as pd
 
@@ -41,8 +42,26 @@ def _env(name: str, default: str | None = None) -> str:
     return v
 
 
-def fetch_ftp_csvs(year: str) -> list[tuple[str, bytes]]:
-    """Connect to FTP, list files matching the year, download as bytes."""
+def _date_from_filename(name: str) -> date | None:
+    """Extract the first YYYYMMDD found in a filename, or None."""
+    m = re.search(r"(\d{4})(\d{2})(\d{2})", name)
+    if not m:
+        return None
+    try:
+        return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    except ValueError:
+        return None
+
+
+def fetch_ftp_csvs(
+    year: str,
+    skip_before: date | None = None,
+) -> list[tuple[str, bytes]]:
+    """Connect to FTP, list files matching the year, download as bytes.
+
+    Files whose embedded YYYYMMDD date is strictly before *skip_before* are
+    skipped entirely so that already-ingested files are not re-downloaded.
+    """
     host = _env("FTP_HOST")
     user = _env("FTP_USER")
     password = _env("FTP_PASS")
@@ -54,6 +73,11 @@ def fetch_ftp_csvs(year: str) -> list[tuple[str, bytes]]:
         for name in names:
             if year not in name:
                 continue
+            if skip_before is not None:
+                file_date = _date_from_filename(name)
+                if file_date is not None and file_date < skip_before:
+                    log.info("skipped %s (before %s)", name, skip_before)
+                    continue
             buf = io.BytesIO()
             ftp.retrbinary(f"RETR {name}", buf.write)
             out.append((f"{name}.csv", buf.getvalue()))
@@ -77,7 +101,23 @@ def main() -> int:
         start_after = start_after.tz_localize(JST)
     cfg = IngestionConfig(site_id=site_id, start_after=start_after)
 
-    files = fetch_ftp_csvs(year)
+    sheets = SheetsClient(spreadsheet_id)
+
+    # Determine the earliest date we still need: max(INGEST_FILTER_START, last ingested).
+    # FTP file names use GMT dates, but sensor timestamps are stored as JST (UTC+9).
+    # A GMT file dated D can contain JST records up to D+1 (e.g. GMT 2025-06-16 covers
+    # JST up to 2025-06-17T08:59). To avoid missing those records, subtract 1 day from
+    # the last-ingested boundary before comparing against GMT file dates.
+    last = sheets.last_date("sensor_raw")
+    skip_before: date | None = start_after.date()
+    if last:
+        last_date = pd.Timestamp(last).date()
+        last_date_gmt_safe = last_date - timedelta(days=1)
+        if last_date_gmt_safe > skip_before:
+            skip_before = last_date_gmt_safe
+    log.info("Skipping FTP files with date before %s", skip_before)
+
+    files = fetch_ftp_csvs(year, skip_before=skip_before)
     log.info("Downloaded %d CSV file(s) from FTP", len(files))
 
     if drive_backup.is_enabled():
@@ -90,11 +130,9 @@ def main() -> int:
     df = concat_csvs(t.decode("utf-8", errors="replace") for _, t in files)
     log.info("Parsed %d total rows", len(df))
 
-    sheets = SheetsClient(spreadsheet_id)
     published = to_published(df, cfg)
 
     # De-dupe against the latest timestamp already in sensor_raw.
-    last = sheets.last_date("sensor_raw")
     if last:
         last_ts = pd.Timestamp(last)
         published = published[pd.to_datetime(published["date"]) > last_ts]
