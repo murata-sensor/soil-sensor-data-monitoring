@@ -1,0 +1,55 @@
+# Requirements / private notes (contains site names, raw sensor data)
+requirements/
+requirements
+
+# Local data / measurement files (must NEVER be committed)
+data/
+*.csv
+*.xlsx
+*.parquet
+*.sqlite
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv*/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Node / frontend
+node_modules/
+web/dist/
+web/.vite/
+web/coverage/
+.eslintcache
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Secrets — must NEVER be committed
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+service-account*.json
+credentials*.json
+client_secret*.json
+ftp_credentials*
+gas_url*
+
+# Logs
+*.log
+logs/
