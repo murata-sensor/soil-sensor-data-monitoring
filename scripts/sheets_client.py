@@ -46,19 +46,23 @@ class SheetsClient:
             return None
         return values[-1][0] if values[-1] else None
 
-    def append_rows(self, sheet: str, rows: Sequence[Sequence[object]]) -> int:
+    def append_rows(self, sheet: str, rows: Sequence[Sequence[object]], batch_size: int = 5000) -> int:
         if not rows:
             return 0
-        body = {"values": [list(r) for r in rows]}
-        resp = self._svc.spreadsheets().values().append(
-            spreadsheetId=self.spreadsheet_id,
-            range=f"{sheet}!A1",
-            valueInputOption="RAW",
-            insertDataOption="INSERT_ROWS",
-            body=body,
-        ).execute()
-        updates = resp.get("updates", {})
-        return int(updates.get("updatedRows", 0))
+        total = 0
+        for i in range(0, len(rows), batch_size):
+            chunk = rows[i:i + batch_size]
+            body = {"values": [list(r) for r in chunk]}
+            resp = self._svc.spreadsheets().values().append(
+                spreadsheetId=self.spreadsheet_id,
+                range=f"{sheet}!A1",
+                valueInputOption="RAW",
+                insertDataOption="INSERT_ROWS",
+                body=body,
+            ).execute()
+            updates = resp.get("updates", {})
+            total += int(updates.get("updatedRows", 0))
+        return total
 
     def read_config(self, sheet: str = "config") -> list[dict]:
         values = self.get_values(f"{sheet}!A1:Z")
