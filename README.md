@@ -16,6 +16,7 @@
 ```
 .
 ├── SPEC.md                 # 全体仕様（設計・データモデル・セキュリティ）
+├── pytest.ini              # pytest 設定
 ├── docs/                   # セットアップ手順書
 │   ├── 01_google_setup.md
 │   ├── 02_github_actions.md
@@ -44,11 +45,10 @@ cd web
 npm install
 npm run dev
 
-# 取り込みスクリプト
-cd ../scripts
-python -m venv .venv
-. .venv/Scripts/Activate.ps1
-pip install -r requirements.txt
+# 取り込みスクリプト（Python 3.12）
+py -3.12 -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r scripts/requirements.txt
 pytest
 ```
 
