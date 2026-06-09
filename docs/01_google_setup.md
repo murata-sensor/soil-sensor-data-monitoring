@@ -175,7 +175,7 @@ https://docs.google.com/spreadsheets/d/1abcDEF...xyz/edit#gid=0
 
 ユーザー（案件主）が既に持っているスプレッドシートをそのまま参照する。
 以下のどちらか方式を選ぶ:
-
+　
 - **方式 direct（推奨・運用がシンプル）**: 案件主に依頼して、ダッシュボードを使う **全 Google アカウントを「閲覧者」共有** してもらう。`accessMode=direct` で登録。
 - **方式 proxy（Drive 共有を絞りたいとき）**: 案件主に依頼して、Registry を持つ Google アカウント **1 つだけに「閲覧者」共有** してもらう。`accessMode=proxy` で登録（[`04_gas_setup.md`](04_gas_setup.md) の read_proxy デプロイが必要）。
 

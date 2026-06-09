@@ -1,6 +1,6 @@
 # Soil Sensor Data Monitoring
 
-土壌センサ／環境ロガーの 3 系統（**FTP（リモート案件） / M5Stack / Mechatrax RasPi**）から
+土壌センサ／環境ロガーの 3 系統（**リモートFTP / M5Stack / Mechatrax RasPi**）から
 得られたデータを Google Spreadsheet に蓄積し、GitHub Pages 上の SPA で可視化するシステム。
 **Google アカウントごとに、参照できるスプレッドシートを個別に制御**する。
 
