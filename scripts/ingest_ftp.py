@@ -76,12 +76,12 @@ def fetch_ftp_csvs(
             if skip_before is not None:
                 file_date = _date_from_filename(name)
                 if file_date is not None and file_date < skip_before:
-                    log.info("skipped %s (before %s)", name, skip_before)
+                    log.info("skipped file dated %s (before %s)", file_date, skip_before)
                     continue
             buf = io.BytesIO()
             ftp.retrbinary(f"RETR {name}", buf.write)
             out.append((f"{name}.csv", buf.getvalue()))
-            log.info("fetched %s (%d bytes)", name, buf.tell())
+            log.info("fetched file dated %s (%d bytes)", _date_from_filename(name) or "unknown", buf.tell())
     return out
 
 
