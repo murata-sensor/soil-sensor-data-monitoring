@@ -4,7 +4,8 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import "./index.css";
 
-const base = (import.meta.env.VITE_BASE_PATH as string | undefined) || "/";
+const rawBase = (import.meta.env.VITE_BASE_PATH as string | undefined)?.trim() || "/";
+const base = rawBase === "/" ? "/" : rawBase.replace(/\/+$/, "") || "/";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

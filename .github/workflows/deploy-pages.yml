@@ -36,7 +36,7 @@ jobs:
           VITE_REGISTRY_SPREADSHEET_ID: ${{ vars.VITE_REGISTRY_SPREADSHEET_ID }}
           VITE_GAS_PROXY_URL:           ${{ vars.VITE_GAS_PROXY_URL }}
           VITE_GAS_ADMIN_URL:           ${{ vars.VITE_GAS_ADMIN_URL }}
-          VITE_BASE_PATH:               ${{ vars.VITE_BASE_PATH || '/' }}
+          VITE_BASE_PATH:               ${{ vars.VITE_BASE_PATH || format('/{0}/', github.event.repository.name) }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web/dist
