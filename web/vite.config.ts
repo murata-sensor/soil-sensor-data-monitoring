@@ -2,7 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig(() => {
-  const base = "/";
+  const rawBase = process.env.VITE_BASE_PATH?.trim() || "/";
+  const base = rawBase === "/" ? "/" : rawBase.endsWith("/") ? rawBase : `${rawBase}/`;
   return {
     plugins: [react()],
     base,
