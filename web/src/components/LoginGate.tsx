@@ -1,11 +1,19 @@
 import { useEffect, useRef } from "react";
-import { renderSignInButton } from "../auth/google";
+import { renderSignInButton, restoreSession } from "../auth/google";
 import { useApp } from "../store";
 
 export default function LoginGate({ children }: { children: React.ReactNode }) {
   const user = useApp((s) => s.user);
   const setUser = useApp((s) => s.setUser);
   const btnRef = useRef<HTMLDivElement>(null);
+
+  // Restore persisted session on mount.
+  useEffect(() => {
+    if (!user) {
+      const restored = restoreSession();
+      if (restored) setUser(restored);
+    }
+  }, []);
 
   useEffect(() => {
     if (user || !btnRef.current) return;

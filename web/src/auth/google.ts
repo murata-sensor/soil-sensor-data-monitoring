@@ -5,19 +5,55 @@
  *   (used by the GAS admin API).
  * - `getAccessToken()` requests an OAuth access token with the sheets.readonly
  *   scope used to read the spreadsheet directly from the browser.
+ *
+ * Sessions are persisted in sessionStorage so users don't have to re-auth on reload.
  */
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
 
-let accessToken: string | null = null;
-let accessTokenExpiry = 0;
+const STORAGE_KEY_USER = "soil_user";
+const STORAGE_KEY_TOKEN = "soil_access_token";
+const STORAGE_KEY_EXPIRY = "soil_access_token_expiry";
+
+let accessToken: string | null = sessionStorage.getItem(STORAGE_KEY_TOKEN);
+let accessTokenExpiry = Number(sessionStorage.getItem(STORAGE_KEY_EXPIRY) || "0");
 
 export interface SignedInUser {
   email: string;
   name?: string;
   picture?: string;
   idToken: string;
+}
+
+/** Restore user session from sessionStorage if still valid. */
+export function restoreSession(): SignedInUser | null {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY_USER);
+    if (!raw) return null;
+    const u = JSON.parse(raw) as SignedInUser;
+    // Check JWT not expired
+    const payload = decodeJwt(u.idToken) as { exp?: number };
+    if (payload.exp && payload.exp * 1000 < Date.now()) {
+      sessionStorage.removeItem(STORAGE_KEY_USER);
+      return null;
+    }
+    return u;
+  } catch {
+    return null;
+  }
+}
+
+/** Persist user to sessionStorage. */
+function saveSession(u: SignedInUser): void {
+  sessionStorage.setItem(STORAGE_KEY_USER, JSON.stringify(u));
+}
+
+function saveAccessToken(): void {
+  if (accessToken) {
+    sessionStorage.setItem(STORAGE_KEY_TOKEN, accessToken);
+    sessionStorage.setItem(STORAGE_KEY_EXPIRY, String(accessTokenExpiry));
+  }
 }
 
 function decodeJwt(token: string): Record<string, unknown> {
@@ -44,20 +80,39 @@ export function renderSignInButton(el: HTMLElement, onUser: (u: SignedInUser) =>
         email?: string; name?: string; picture?: string;
       };
       if (!payload.email) return;
-      onUser({
+      const u: SignedInUser = {
         email: payload.email,
         name: payload.name,
         picture: payload.picture,
         idToken: resp.credential,
-      });
+      };
+      saveSession(u);
+      onUser(u);
     },
   });
   window.google.accounts.id.renderButton(el, { theme: "outline", size: "large" });
 }
 
+export class ConsentRequiredError extends Error {
+  constructor() {
+    super("CONSENT_REQUIRED");
+    this.name = "ConsentRequiredError";
+  }
+}
+
 export async function getAccessToken(): Promise<string> {
   if (accessToken && Date.now() < accessTokenExpiry - 60_000) return accessToken;
   if (!window.google) throw new Error("Google Identity Services not loaded");
+  return requestToken("");
+}
+
+/** Call from a click handler to grant Sheets access with explicit user gesture. */
+export async function requestConsentToken(): Promise<string> {
+  if (!window.google) throw new Error("Google Identity Services not loaded");
+  return requestToken("consent");
+}
+
+function requestToken(prompt: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const client = window.google!.accounts.oauth2.initTokenClient({
       client_id: CLIENT_ID,
@@ -66,9 +121,17 @@ export async function getAccessToken(): Promise<string> {
         if (!resp.access_token) return reject(new Error("no access_token"));
         accessToken = resp.access_token;
         accessTokenExpiry = Date.now() + resp.expires_in * 1000;
+        saveAccessToken();
         resolve(resp.access_token);
       },
+      error_callback: (err) => {
+        if (err.type === "popup_closed" || err.type === "popup_blocked") {
+          reject(new ConsentRequiredError());
+        } else {
+          reject(new Error(`OAuth token error: ${err.type || "unknown"}`));
+        }
+      },
     });
-    client.requestAccessToken({ prompt: "" });
+    client.requestAccessToken({ prompt });
   });
 }

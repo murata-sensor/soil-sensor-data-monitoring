@@ -15,6 +15,7 @@ import {
   type EventRow, type SourceRow, type ThemePanel,
 } from "../types";
 import type { NormalizedRow } from "../adapters";
+import { ConsentRequiredError, requestConsentToken } from "../auth/google";
 
 ChartJS.register(
   CategoryScale, LinearScale, LineElement, PointElement, TimeScale,
@@ -50,29 +51,37 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [unregistered, setUnregistered] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [needsConsent, setNeedsConsent] = useState(false);
+
+  const loadRegistry = async () => {
+    if (!user) return;
+    setNeedsConsent(false); setError(null);
+    try {
+      const [src, users, acl, ev, t] = await Promise.all([
+        loadSources(), loadUsers(), loadAcl(), loadEvents(), loadTheme(),
+      ]);
+      setSources(src); setEvents(ev);
+      if (t) setTheme(t);
+      const me = users.find((u) => u.email.toLowerCase() === user.email.toLowerCase());
+      if (!me || !me.enabled) { setUnregistered(true); return; }
+      setIsAdmin(me.role === "admin");
+      const list = resolveAllowedSources(user.email, src, users, acl);
+      setAllowed(list);
+      if (list.length && !selectedSourceId) {
+        setSelectedSource(list[0]);
+      }
+    } catch (e) {
+      if (e instanceof ConsentRequiredError) {
+        setNeedsConsent(true);
+      } else {
+        setError(String(e));
+      }
+    }
+  };
 
   // Load registry on mount.
   useEffect(() => {
-    if (!user) return;
-    (async () => {
-      try {
-        const [src, users, acl, ev, t] = await Promise.all([
-          loadSources(), loadUsers(), loadAcl(), loadEvents(), loadTheme(),
-        ]);
-        setSources(src); setEvents(ev);
-        if (t) setTheme(t);
-        const me = users.find((u) => u.email.toLowerCase() === user.email.toLowerCase());
-        if (!me || !me.enabled) { setUnregistered(true); return; }
-        setIsAdmin(me.role === "admin");
-        const list = resolveAllowedSources(user.email, src, users, acl);
-        setAllowed(list);
-        if (list.length && !selectedSourceId) {
-          setSelectedSource(list[0]);
-        }
-      } catch (e) {
-        setError(String(e));
-      }
-    })();
+    loadRegistry();
   }, [user, setTheme, setSelectedSource, selectedSourceId]);
 
   // Load data when source changes.
@@ -101,6 +110,32 @@ export default function Dashboard() {
     () => (selected ? events.filter((e) => e.sourceId === selected.sourceId) : []),
     [selected, events],
   );
+
+  if (needsConsent) {
+    return (
+      <div className="p-10 text-center">
+        <p className="mb-4 text-slate-700">
+          Google スプレッドシートへのアクセス許可が必要です。<br />
+          下のボタンをクリックして許可してください。
+        </p>
+        <button
+          className="px-6 py-2 rounded bg-blue-600 text-white font-semibold hover:bg-blue-700"
+          onClick={async () => {
+            try {
+              await requestConsentToken();
+              setNeedsConsent(false);
+              loadRegistry();
+            } catch (e) {
+              setError(String(e));
+            }
+          }}
+        >
+          スプレッドシートへのアクセスを許可
+        </button>
+        {error && <p className="mt-4 text-rose-600 text-sm">{error}</p>}
+      </div>
+    );
+  }
 
   if (unregistered) {
     return (
