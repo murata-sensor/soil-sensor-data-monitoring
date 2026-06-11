@@ -100,6 +100,18 @@ describe("remote-ftp adapter", () => {
     expect(rows[0].ec_bulk_dsm).toBeCloseTo(0.86);
     expect(rows[0].vwc_pct).toBeCloseTo(57.5);
   });
+
+  it("reads columns with unit suffixes in headers", () => {
+    const rows = toNormalized("remote-ftp", [
+      ["date", "site", "addr", "number", "battery1[V]", "battery2[V]", "bulk_ec[dS/m]", "vwc[%]"],
+      ["2026-06-11 08:59:41+09:00", "site-a", "1ca7", "1", "3.5175", "3.438", "0.474", "55.4"],
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].deviceId).toBe("1ca7");
+    expect(rows[0].battery_v).toBeCloseTo(3.5175);
+    expect(rows[0].ec_bulk_dsm).toBeCloseTo(0.474);
+    expect(rows[0].vwc_pct).toBeCloseTo(55.4);
+  });
 });
 
 describe("resolveAllowedSources", () => {
