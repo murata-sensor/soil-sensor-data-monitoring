@@ -75,7 +75,7 @@ def test_to_published_filters_and_shapes():
     pub = to_published(df, _cfg())
     assert list(pub.columns) == [
         "date", "siteId", "addr", "number", "battery1", "battery2",
-        "bulk_ec", "vwc",
+        "bulk_ec", "vwc", "soil_temp",
     ]
     assert (pub["siteId"] == "site-a").all()
     assert pub["addr"].iloc[0] == "fac"

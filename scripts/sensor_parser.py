@@ -26,7 +26,7 @@ RAW_COLUMNS = [
 # Columns published to Spreadsheet `sensor_raw` / `sensor_9am`.
 PUBLISHED_COLUMNS = [
     "date", "siteId", "addr", "number", "battery1", "battery2",
-    "bulk_ec", "vwc",
+    "bulk_ec", "vwc", "soil_temp",
 ]
 
 
@@ -42,6 +42,14 @@ def _hex_to_int(value):
         return int(value, base=16)
     except Exception:
         return value
+
+
+def _ct_to_celsius(raw):
+    """Convert CT raw value (12-bit 2's complement) to °C (* 0.0625)."""
+    v = int(raw)
+    if v >= 2048:  # MSB of 12-bit is set → negative
+        v -= 4096
+    return v * 0.0625
 
 
 def parse_csv_text(text: str) -> pd.DataFrame:
@@ -90,6 +98,7 @@ def to_published(df: pd.DataFrame, cfg: IngestionConfig) -> pd.DataFrame:
         "battery2": filtered["vbat"].astype(float).round(4).tolist(),
         "bulk_ec": filtered["bec"].astype(float).round(4).tolist(),
         "vwc": filtered["vwcO"].astype(float).round(2).tolist(),
+        "soil_temp": filtered["CT"].apply(_ct_to_celsius).round(4).tolist(),
     })
     return out.reset_index(drop=True)
 
