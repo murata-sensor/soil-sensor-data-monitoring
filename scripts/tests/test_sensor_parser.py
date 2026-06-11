@@ -23,9 +23,21 @@ SAMPLE = (
 )
 
 NINE_AM_SAMPLE = (
+    # 08:45 JST — outside new window
+    "2026-06-14T23:45:00.000Z, 0x000fac, \"Soil\", 0, 1, 0, 17, 132, 0141232e, "
+    "3286, 870, 0, 2146, 961, 341, 860, 3088, 575, 2812, 625, 0, 2668, 0, 852, "
+    "889, 884, 873, 897, 894, 824, 896, 863, 854, 912, 902\n"
+    # 08:50 JST — in window, 10 minutes away from 09:00
+    "2026-06-14T23:50:00.000Z, 0x000fac, \"Soil\", 0, 1, 0, 17, 132, 0141232e, "
+    "3286, 875, 0, 2146, 961, 341, 860, 3088, 575, 2812, 625, 0, 2668, 0, 852, "
+    "889, 884, 873, 897, 894, 824, 896, 863, 854, 912, 902\n"
     # 09:05 JST = 00:05 UTC
     "2026-06-15T00:05:00.000Z, 0x000fac, \"Soil\", 0, 1, 0, 17, 132, 0141232e, "
     "3286, 883, 0, 2146, 961, 341, 860, 3088, 575, 2812, 625, 0, 2668, 0, 852, "
+    "889, 884, 873, 897, 894, 824, 896, 863, 854, 912, 902\n"
+    # 08:59 JST — closest to 09:00, should win
+    "2026-06-14T23:59:00.000Z, 0x000fac, \"Soil\", 0, 1, 0, 17, 132, 0141232e, "
+    "3286, 890, 0, 2146, 961, 341, 860, 3088, 575, 2812, 625, 0, 2668, 0, 852, "
     "889, 884, 873, 897, 894, 824, 896, 863, 854, 912, 902\n"
     # 09:20 JST same key
     "2026-06-15T00:20:00.000Z, 0x000fac, \"Soil\", 0, 1, 0, 17, 132, 0141232e, "
@@ -91,13 +103,12 @@ def test_to_published_respects_start_after():
     assert pub.empty
 
 
-def test_select_nine_am_keeps_first_in_window():
+def test_select_nine_am_keeps_closest_to_nine_in_window():
     df = parse_csv_text(NINE_AM_SAMPLE)
     pub = to_published(df, _cfg())
     nine = select_nine_am(pub)
     assert len(nine) == 1
-    # First reading is at 09:05 JST
-    assert nine["date"].iloc[0].startswith("2026-06-15 09:05")
+    assert nine["date"].iloc[0].startswith("2026-06-15 08:59")
 
 
 def test_select_nine_am_empty_input():

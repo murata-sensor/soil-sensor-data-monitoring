@@ -34,7 +34,7 @@ PUBLISHED_COLUMNS = [
 class IngestionConfig:
     site_id: str
     start_after: pd.Timestamp  # tz-aware
-    nine_am_window: tuple[str, str] = ("09:00", "09:30")
+    nine_am_window: tuple[str, str] = ("08:46", "09:14")
 
 
 def _hex_to_int(value):
@@ -133,15 +133,18 @@ def to_published(
     return out.reset_index(drop=True)
 
 
-def select_nine_am(published: pd.DataFrame, window=("09:00", "09:30")) -> pd.DataFrame:
-    """Keep the first reading per (date, siteId, addr, number) within the window."""
+def select_nine_am(published: pd.DataFrame, window=("08:46", "09:14")) -> pd.DataFrame:
+    """Keep the reading closest to 09:00 per (date, siteId, addr, number)."""
     if published.empty:
         return published
     df = published.copy()
     df["_ts"] = pd.to_datetime(df["date"])
     df["_t"] = df["_ts"].dt.strftime("%H:%M")
     mask = (df["_t"] >= window[0]) & (df["_t"] <= window[1])
-    df = df[mask].sort_values("_ts")
+    df = df[mask]
+    target = df["_ts"].dt.normalize() + pd.Timedelta(hours=9)
+    df["_distance_to_9am"] = (df["_ts"] - target).abs()
     df["_date"] = df["_ts"].dt.strftime("%Y-%m-%d")
+    df = df.sort_values(["_distance_to_9am", "_ts"])
     df = df.drop_duplicates(subset=["_date", "siteId", "addr", "number"], keep="first")
-    return df.drop(columns=["_t", "_ts", "_date"]).reset_index(drop=True)
+    return df.drop(columns=["_t", "_ts", "_date", "_distance_to_9am"]).reset_index(drop=True)
