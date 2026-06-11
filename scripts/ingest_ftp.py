@@ -189,6 +189,16 @@ def fetch_weather_data(
         return pd.DataFrame()
 
 
+def _clamp_weather_date_range(start_date: date, end_date: date) -> tuple[date, date]:
+    """Clamp Open-Meteo archive requests to dates that are already observable."""
+    today_jst = datetime.now(JST).date()
+    clamped_start = min(start_date, today_jst)
+    clamped_end = min(end_date, today_jst)
+    if clamped_start > clamped_end:
+        clamped_start = clamped_end
+    return clamped_start, clamped_end
+
+
 def main() -> int:
     from .sheets_client import SheetsClient
 
@@ -264,6 +274,7 @@ def main() -> int:
             min_date = min_date - timedelta(days=1)
             max_date = max_date + timedelta(days=1)
 
+            min_date, max_date = _clamp_weather_date_range(min_date, max_date)
             weather_df = fetch_weather_data(lat, lon, min_date, max_date)
             if weather_df.empty:
                 log.warning("No weather data fetched")
@@ -299,8 +310,8 @@ def main() -> int:
     log.info("Appended %d rows to sensor_raw", n1)
 
     nine = select_nine_am(published)
-    last9 = sheets.last_date("sensor_9am")
-    nine = _filter_rows_newer_than_last(nine, last9)
+    existing_nine = sheets.get_values("sensor_9am!A2:D")
+    nine = _filter_rows_not_existing(nine, existing_nine)
     n2 = sheets.append_rows("sensor_9am", nine.values.tolist())
     log.info("Appended %d rows to sensor_9am", n2)
 
