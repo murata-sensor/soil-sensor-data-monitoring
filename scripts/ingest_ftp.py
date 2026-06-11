@@ -25,13 +25,12 @@ import logging
 import os
 import re
 from datetime import datetime, date, timezone, timedelta
+from typing import Callable
 
 import pandas as pd
 import urllib.request
 
-from . import drive_backup
 from .sensor_parser import IngestionConfig, concat_csvs, select_nine_am, to_published
-from .sheets_client import SheetsClient
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("ingest")
@@ -55,6 +54,27 @@ def _date_from_filename(name: str) -> date | None:
         return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
     except ValueError:
         return None
+
+
+def _filter_rows_newer_than_last(published: pd.DataFrame, last: str | None) -> pd.DataFrame:
+    """Return only rows whose `date` is newer than `last`.
+
+    This normalizes both sides to tz-aware UTC timestamps so comparisons are
+    stable even when one side is tz-naive (including empty datetime series).
+    """
+    if not last or published.empty:
+        return published
+
+    last_ts = pd.Timestamp(last)
+    if last_ts.tzinfo is None:
+        last_ts = last_ts.tz_localize(JST)
+    last_ts = last_ts.tz_convert("UTC")
+
+    published_dates = pd.to_datetime(published["date"], errors="coerce", utc=True)
+    mask = published_dates.notna() & (published_dates > last_ts)
+    if published_dates.isna().any():
+        log.warning("Skipping rows with unparseable date values in published data")
+    return published[mask]
 
 
 def fetch_ftp_csvs(
@@ -112,14 +132,14 @@ def fetch_weather_data(
             f"&end_date={end_date.isoformat()}"
         )
         log.info("Fetching weather data from Open-Meteo: lat=%.4f lon=%.4f", latitude, longitude)
-        
+
         with urllib.request.urlopen(url, timeout=30) as response:
             data = json.loads(response.read().decode("utf-8"))
-        
+
         if "daily" not in data or "time" not in data["daily"]:
             log.warning("Weather API returned unexpected structure: %s", data)
             return pd.DataFrame()
-        
+
         daily = data["daily"]
         df = pd.DataFrame({
             "date": daily["time"],
@@ -127,10 +147,10 @@ def fetch_weather_data(
             "precip_1h": daily.get("precipitation_sum", [None] * len(daily["time"])),
             "sunshine_1h": [None] * len(daily["time"]),  # API doesn't return this in archive
         })
-        
+
         df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
         df = df.set_index("date")
-        
+
         log.info("Fetched weather data for %d days", len(df))
         return df
     except Exception as e:
@@ -139,10 +159,20 @@ def fetch_weather_data(
 
 
 def main() -> int:
-    spreadsheet_id = (
-        os.environ.get("FTP_SPREADSHEET_ID")
-        or os.environ.get("SPREADSHEET_ID")
-    )
+    from .sheets_client import SheetsClient
+
+    # Optional dependency: Drive backup requires Google API packages.
+    drive_backup_enabled = False
+    drive_backup_upload_many: Callable[[list[tuple[str, bytes]]], list[str]] | None = None
+    try:
+        from . import drive_backup as drive_backup_module
+    except ModuleNotFoundError:
+        pass
+    else:
+        drive_backup_enabled = drive_backup_module.is_enabled()
+        drive_backup_upload_many = drive_backup_module.upload_many
+
+    spreadsheet_id = os.environ.get("FTP_SPREADSHEET_ID") or os.environ.get("SPREADSHEET_ID")
     if not spreadsheet_id:
         raise RuntimeError(
             "Required env var missing: FTP_SPREADSHEET_ID (or legacy SPREADSHEET_ID)"
@@ -173,9 +203,9 @@ def main() -> int:
     files = fetch_ftp_csvs(year, skip_before=skip_before)
     log.info("Downloaded %d CSV file(s) from FTP", len(files))
 
-    if drive_backup.is_enabled():
+    if drive_backup_enabled and drive_backup_upload_many is not None:
         try:
-            ids = drive_backup.upload_many(files)
+            ids = drive_backup_upload_many(files)
             log.info("Backed up %d files to Drive (%s)", len(ids), ids[:3])
         except Exception:  # noqa: BLE001
             log.exception("Drive backup failed (continuing)")
@@ -198,11 +228,11 @@ def main() -> int:
             else:
                 min_date = start_after.date()
                 max_date = datetime.now(JST).date()
-            
+
             # Add 1 day buffer for timezone safety
             min_date = min_date - timedelta(days=1)
             max_date = max_date + timedelta(days=1)
-            
+
             weather_df = fetch_weather_data(lat, lon, min_date, max_date)
             if weather_df.empty:
                 log.warning("No weather data fetched")
@@ -215,13 +245,7 @@ def main() -> int:
     published = to_published(df, cfg, weather_df=weather_df)
 
     # De-dupe against the latest timestamp already in sensor_raw.
-    if last:
-        last_ts = pd.Timestamp(last)
-        # Parse dates with timezone format (e.g. "2026-06-11 08:59:41+09:00")
-        published_dates = pd.to_datetime(
-            published["date"], format="%Y-%m-%d %H:%M:%S%z"
-        )
-        published = published[published_dates > last_ts]
+    published = _filter_rows_newer_than_last(published, last)
     n1 = sheets.append_rows(
         "sensor_raw",
         published.values.tolist(),
@@ -230,12 +254,7 @@ def main() -> int:
 
     nine = select_nine_am(published)
     last9 = sheets.last_date("sensor_9am")
-    if last9:
-        # Parse dates with timezone format (e.g. "2026-06-11 08:59:41+09:00")
-        nine_dates = pd.to_datetime(
-            nine["date"], format="%Y-%m-%d %H:%M:%S%z"
-        )
-        nine = nine[nine_dates > pd.Timestamp(last9)]
+    nine = _filter_rows_newer_than_last(nine, last9)
     n2 = sheets.append_rows("sensor_9am", nine.values.tolist())
     log.info("Appended %d rows to sensor_9am", n2)
 
