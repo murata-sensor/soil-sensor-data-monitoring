@@ -42,6 +42,14 @@ function parseBool(v: string | boolean | undefined): boolean {
   return /^(true|1|yes|y)$/i.test(v.trim());
 }
 
+function normalizeEmail(value: string | undefined): string {
+  return (value || "").trim().toLowerCase();
+}
+
+function normalizeSourceId(value: string | undefined): string {
+  return (value || "").trim().toLowerCase();
+}
+
 // ─── registry reads ─────────────────────────────────────────────────────────
 
 export async function readRegistry(range: string): Promise<string[][]> {
@@ -52,7 +60,7 @@ export async function readRegistry(range: string): Promise<string[][]> {
 export async function loadUsers(): Promise<UserRow[]> {
   const raw = toObjects<Record<string, string>>(await readRegistry("users!A1:Z"));
   return raw.map((r) => ({
-    email: (r.email || "").trim(),
+    email: normalizeEmail(r.email),
     role: ((r.role || "viewer").trim().toLowerCase() as UserRow["role"]),
     enabled: parseBool(r.enabled),
   })).filter((u) => u.email);
@@ -78,7 +86,7 @@ export async function loadSources(): Promise<SourceRow[]> {
 export async function loadAcl(): Promise<AclRow[]> {
   const raw = toObjects<Record<string, string>>(await readRegistry("acl!A1:Z"));
   return raw.map((r) => ({
-    email: (r.email || "").trim().toLowerCase(),
+    email: normalizeEmail(r.email),
     sourceId: (r.sourceId || "").trim(),
     permission: "read" as const,
   })).filter((a) => a.email && a.sourceId);
@@ -143,16 +151,16 @@ export function resolveAllowedSources(
   users: UserRow[],
   acl: AclRow[],
 ): SourceRow[] {
-  const e = (email || "").toLowerCase();
-  const user = users.find((u) => u.email.toLowerCase() === e);
+  const e = normalizeEmail(email);
+  const user = users.find((u) => normalizeEmail(u.email) === e);
   if (!user || !user.enabled) return [];
   const enabled = sources.filter((s) => s.enabled);
   if (user.role === "admin") return enabled;
   const allowed = new Set<string>();
   for (const a of acl) {
-    if (a.email !== e) continue;
-    if (a.sourceId === "*") return enabled;
-    allowed.add(a.sourceId);
+    if (normalizeEmail(a.email) !== e) continue;
+    if ((a.sourceId || "").trim() === "*") return enabled;
+    allowed.add(normalizeSourceId(a.sourceId));
   }
-  return enabled.filter((s) => allowed.has(s.sourceId));
+  return enabled.filter((s) => allowed.has(normalizeSourceId(s.sourceId)));
 }

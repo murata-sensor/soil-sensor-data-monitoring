@@ -140,4 +140,14 @@ describe("resolveAllowedSources", () => {
     expect(resolveAllowedSources("v@example.com", sources, users, acl2)
       .map((s) => s.sourceId)).toEqual(["s1", "s2"]);
   });
+  it("matches acl rows even when email and sourceId casing differ", () => {
+    const users2: UserRow[] = [
+      { email: " Viewer@Example.com ", role: "viewer", enabled: true },
+    ];
+    const acl2: AclRow[] = [
+      { email: "viewer@example.com", sourceId: " S1 ", permission: "read" },
+    ];
+    expect(resolveAllowedSources("viewer@example.com", sources, users2, acl2)
+      .map((s) => s.sourceId)).toEqual(["s1"]);
+  });
 });

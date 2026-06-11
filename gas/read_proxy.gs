@@ -16,11 +16,19 @@ const PROXY_SOURCES_SHEET = 'sources';
 const PROXY_ACL_SHEET = 'acl';
 const PROXY_USERS_SHEET = 'users';
 
+function _proxyNormalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function _proxyNormalizeSourceId(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
 function doPost(e) {
   try {
     const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     const email = _proxyVerifyIdToken(body.idToken);
-    const sourceId = String(body.sourceId || '');
+    const sourceId = String(body.sourceId || '').trim();
     if (!sourceId) return _proxyJson({ ok: false, error: 'missing sourceId' });
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -55,26 +63,29 @@ function _proxyVerifyIdToken(token) {
   const aud = PropertiesService.getScriptProperties().getProperty('GOOGLE_OAUTH_CLIENT_ID');
   if (aud && info.aud !== aud) throw new Error('wrong audience');
   if (!info.email_verified) throw new Error('email not verified');
-  return String(info.email).toLowerCase();
+  return _proxyNormalizeEmail(info.email);
 }
 
 function _proxyAuthorize(ss, email, sourceId) {
+  const normalizedEmail = _proxyNormalizeEmail(email);
+  const normalizedSourceId = _proxyNormalizeSourceId(sourceId);
   // user enabled?
   const users = _proxySheetAsObjects(ss, PROXY_USERS_SHEET);
-  const user = users.find((u) => String(u.email || '').toLowerCase() === email);
+  const user = users.find((u) => _proxyNormalizeEmail(u.email) === normalizedEmail);
   if (!user) return false;
   if (String(user.enabled).toUpperCase() === 'FALSE') return false;
   if (String(user.role || '').toLowerCase() === 'admin') return true;
   const acl = _proxySheetAsObjects(ss, PROXY_ACL_SHEET);
   return acl.some((a) =>
-    String(a.email || '').toLowerCase() === email
-    && (a.sourceId === '*' || a.sourceId === sourceId)
+    _proxyNormalizeEmail(a.email) === normalizedEmail
+    && (_proxyNormalizeSourceId(a.sourceId) === '*' || _proxyNormalizeSourceId(a.sourceId) === normalizedSourceId)
   );
 }
 
 function _proxyFindSource(ss, sourceId) {
+  const normalizedSourceId = _proxyNormalizeSourceId(sourceId);
   const src = _proxySheetAsObjects(ss, PROXY_SOURCES_SHEET)
-    .find((r) => r.sourceId === sourceId);
+    .find((r) => _proxyNormalizeSourceId(r.sourceId) === normalizedSourceId);
   if (!src) return null;
   if (String(src.enabled).toUpperCase() === 'FALSE') return null;
   return src;
