@@ -77,6 +77,37 @@ def _filter_rows_newer_than_last(published: pd.DataFrame, last: str | None) -> p
     return published[mask]
 
 
+def _parse_ts_as_jst(value: str | None) -> pd.Timestamp | None:
+    if not value:
+        return None
+    ts = pd.Timestamp(value)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize(JST)
+    return ts.tz_convert("Asia/Tokyo")
+
+
+def _filter_rows_not_existing(
+    published: pd.DataFrame,
+    existing_rows: list[list[str]],
+) -> pd.DataFrame:
+    """Return only rows not already present in the sheet.
+
+    Uses (date, siteId, addr, number) as a stable row identity.
+    """
+    if published.empty:
+        return published
+
+    existing_keys: set[tuple[str, str, str, str]] = set()
+    for row in existing_rows:
+        if len(row) < 4:
+            continue
+        existing_keys.add((str(row[0]), str(row[1]), str(row[2]), str(row[3])))
+
+    keys = published[["date", "siteId", "addr", "number"]].astype(str)
+    mask = ~keys.apply(tuple, axis=1).isin(existing_keys)
+    return published[mask]
+
+
 def fetch_ftp_csvs(
     year: str,
     skip_before: date | None = None,
@@ -244,8 +275,23 @@ def main() -> int:
 
     published = to_published(df, cfg, weather_df=weather_df)
 
-    # De-dupe against the latest timestamp already in sensor_raw.
-    published = _filter_rows_newer_than_last(published, last)
+    # Fast path: append only strictly newer rows.
+    # Backfill path: when INGEST_FILTER_START is older than current last row,
+    # switch to key-based de-duplication so historical gaps can be filled.
+    last_ts = _parse_ts_as_jst(last)
+    if last_ts is not None and cfg.start_after < last_ts:
+        existing = sheets.get_values("sensor_raw!A2:D")
+        before = len(published)
+        published = _filter_rows_not_existing(published, existing)
+        log.info(
+            "Backfill mode enabled (start_after=%s, last=%s): kept %d/%d rows after key de-duplication",
+            cfg.start_after,
+            last_ts,
+            len(published),
+            before,
+        )
+    else:
+        published = _filter_rows_newer_than_last(published, last)
     n1 = sheets.append_rows(
         "sensor_raw",
         published.values.tolist(),
