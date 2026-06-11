@@ -217,7 +217,11 @@ def main() -> int:
     # De-dupe against the latest timestamp already in sensor_raw.
     if last:
         last_ts = pd.Timestamp(last)
-        published = published[pd.to_datetime(published["date"]) > last_ts]
+        # Parse dates with timezone format (e.g. "2026-06-11 08:59:41+09:00")
+        published_dates = pd.to_datetime(
+            published["date"], format="%Y-%m-%d %H:%M:%S%z"
+        )
+        published = published[published_dates > last_ts]
     n1 = sheets.append_rows(
         "sensor_raw",
         published.values.tolist(),
@@ -227,7 +231,11 @@ def main() -> int:
     nine = select_nine_am(published)
     last9 = sheets.last_date("sensor_9am")
     if last9:
-        nine = nine[pd.to_datetime(nine["date"]) > pd.Timestamp(last9)]
+        # Parse dates with timezone format (e.g. "2026-06-11 08:59:41+09:00")
+        nine_dates = pd.to_datetime(
+            nine["date"], format="%Y-%m-%d %H:%M:%S%z"
+        )
+        nine = nine[nine_dates > pd.Timestamp(last9)]
     n2 = sheets.append_rows("sensor_9am", nine.values.tolist())
     log.info("Appended %d rows to sensor_9am", n2)
 
