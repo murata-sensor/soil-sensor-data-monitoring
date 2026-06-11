@@ -2,7 +2,8 @@
 
 Reads the published `sensor_raw` / `sensor_9am` schema produced by
 `scripts.sensor_parser.to_published`:
-    date, siteId, addr, number, battery1, battery2, bulk_ec, vwc, soil_temp
+    date, siteId, addr, number, battery1, battery2, bulk_ec, vwc, soil_temp,
+    air_temp, precip_1h, sunshine_1h
 """
 
 from __future__ import annotations
@@ -21,6 +22,9 @@ HEADER_MAP = {
     "vwc": "vwc_pct",
     "vwc[%]": "vwc_pct",
     "soil_temp": "temperature_c",
+    "air_temp": "air_temp_c",
+    "precip_1h": "precip_1h_mm",
+    "sunshine_1h": "sunshine_1h_h",
 }
 
 STRING_FIELDS = {"ts", "device_id"}

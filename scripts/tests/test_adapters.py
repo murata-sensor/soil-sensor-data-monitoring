@@ -103,9 +103,11 @@ def test_mechatrax_normalization_and_pii_drop():
 
 def test_remote_ftp_adapter_reads_published_columns():
     header = ["date", "siteId", "addr", "number",
-              "battery1", "battery2", "bulk_ec", "vwc"]
-    row = ["2026-06-15 09:05:00+09:00", "site-a", "fac", "1",
-           "3.45", "2.812", "0.860", "57.5"]
+            "battery1", "battery2", "bulk_ec", "vwc", "soil_temp",
+            "air_temp", "precip_1h", "sunshine_1h"]
+        row = ["2026-06-15 09:05:00+09:00", "site-a", "fac", "1",
+            "3.45", "2.812", "0.860", "57.5", "18.5",
+            "25.3", "5.2", "0.0"]
     out = to_normalized("remote-ftp", [header, row])
     assert len(out) == 1
     r = out[0]
@@ -114,6 +116,8 @@ def test_remote_ftp_adapter_reads_published_columns():
     assert r.battery_v == 3.45
     assert r.ec_bulk_dsm == 0.860
     assert r.vwc_pct == 57.5
+    assert r.air_temp_c == 25.3
+    assert r.precip_1h_mm == 5.2
 
 
 def test_unknown_schema_raises():

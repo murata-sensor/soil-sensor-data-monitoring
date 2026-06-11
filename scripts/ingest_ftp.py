@@ -12,18 +12,22 @@ Optional:
     DRIVE_BACKUP_FOLDER_ID
     INGEST_YEAR              (default: current JST year)
     SITE_ID                  (default: site-a)
+    FTP_SITE_LATITUDE        (site latitude for weather data; required for weather)
+    FTP_SITE_LONGITUDE       (site longitude for weather data; required for weather)
 """
 
 from __future__ import annotations
 
 import ftplib
 import io
+import json
 import logging
 import os
 import re
 from datetime import datetime, date, timezone, timedelta
 
 import pandas as pd
+import urllib.request
 
 from . import drive_backup
 from .sensor_parser import IngestionConfig, concat_csvs, select_nine_am, to_published
@@ -85,6 +89,55 @@ def fetch_ftp_csvs(
     return out
 
 
+def fetch_weather_data(
+    latitude: float,
+    longitude: float,
+    start_date: date,
+    end_date: date,
+) -> pd.DataFrame:
+    """Fetch daily weather data from Open-Meteo API.
+
+    Returns a DataFrame indexed by date (YYYY-MM-DD) with columns:
+    air_temp (°C), precip_1h (mm), sunshine_1h (h)
+    """
+    try:
+        # Open-Meteo API endpoint for historical weather data
+        url = (
+            "https://archive-api.open-meteo.com/v1/archive"
+            f"?latitude={latitude}"
+            f"&longitude={longitude}"
+            "&daily=temperature_2m_max,temperature_2m_min,precipitation_sum"
+            "&timezone=Asia%2FTokyo"
+            f"&start_date={start_date.isoformat()}"
+            f"&end_date={end_date.isoformat()}"
+        )
+        log.info("Fetching weather data from Open-Meteo: lat=%.4f lon=%.4f", latitude, longitude)
+        
+        with urllib.request.urlopen(url, timeout=30) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        
+        if "daily" not in data or "time" not in data["daily"]:
+            log.warning("Weather API returned unexpected structure: %s", data)
+            return pd.DataFrame()
+        
+        daily = data["daily"]
+        df = pd.DataFrame({
+            "date": daily["time"],
+            "air_temp": daily.get("temperature_2m_max", [None] * len(daily["time"])),
+            "precip_1h": daily.get("precipitation_sum", [None] * len(daily["time"])),
+            "sunshine_1h": [None] * len(daily["time"]),  # API doesn't return this in archive
+        })
+        
+        df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
+        df = df.set_index("date")
+        
+        log.info("Fetched weather data for %d days", len(df))
+        return df
+    except Exception as e:
+        log.error("Failed to fetch weather data: %s", e)
+        return pd.DataFrame()
+
+
 def main() -> int:
     spreadsheet_id = (
         os.environ.get("FTP_SPREADSHEET_ID")
@@ -130,7 +183,36 @@ def main() -> int:
     df = concat_csvs(t.decode("utf-8", errors="replace") for _, t in files)
     log.info("Parsed %d total rows", len(df))
 
-    published = to_published(df, cfg)
+    # Fetch weather data if coordinates are provided
+    weather_df = None
+    lat_str = os.environ.get("FTP_SITE_LATITUDE")
+    lon_str = os.environ.get("FTP_SITE_LONGITUDE")
+    if lat_str and lon_str:
+        try:
+            lat = float(lat_str)
+            lon = float(lon_str)
+            # Determine date range for weather data
+            if not df.empty:
+                min_date = df.index.min().date()
+                max_date = df.index.max().date()
+            else:
+                min_date = start_after.date()
+                max_date = datetime.now(JST).date()
+            
+            # Add 1 day buffer for timezone safety
+            min_date = min_date - timedelta(days=1)
+            max_date = max_date + timedelta(days=1)
+            
+            weather_df = fetch_weather_data(lat, lon, min_date, max_date)
+            if weather_df.empty:
+                log.warning("No weather data fetched")
+                weather_df = None
+        except ValueError as e:
+            log.warning("Invalid weather coordinates: %s", e)
+    else:
+        log.info("Weather coordinates not provided (FTP_SITE_LATITUDE/FTP_SITE_LONGITUDE)")
+
+    published = to_published(df, cfg, weather_df=weather_df)
 
     # De-dupe against the latest timestamp already in sensor_raw.
     if last:

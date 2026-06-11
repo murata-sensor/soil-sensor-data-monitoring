@@ -26,7 +26,7 @@ RAW_COLUMNS = [
 # Columns published to Spreadsheet `sensor_raw` / `sensor_9am`.
 PUBLISHED_COLUMNS = [
     "date", "siteId", "addr", "number", "battery1", "battery2",
-    "bulk_ec", "vwc", "soil_temp",
+    "bulk_ec", "vwc", "soil_temp", "air_temp", "precip_1h", "sunshine_1h",
 ]
 
 
@@ -82,8 +82,20 @@ def concat_csvs(texts: Iterable[str]) -> pd.DataFrame:
     return pd.concat(frames).sort_index()
 
 
-def to_published(df: pd.DataFrame, cfg: IngestionConfig) -> pd.DataFrame:
-    """Reduce a raw DataFrame to the published columns (SPEC §4.1)."""
+def to_published(
+    df: pd.DataFrame,
+    cfg: IngestionConfig,
+    weather_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Reduce a raw DataFrame to the published columns (SPEC §4.1).
+
+    Args:
+        df: Raw sensor data DataFrame (indexed by Time in Asia/Tokyo)
+        cfg: IngestionConfig with site_id and start_after timestamp
+        weather_df: Optional DataFrame with weather data to merge.
+                   Must have index='date' (YYYY-MM-DD) and columns:
+                   'air_temp', 'precip_1h', 'sunshine_1h'
+    """
     if df.empty:
         return pd.DataFrame(columns=PUBLISHED_COLUMNS)
     filtered = df[df.index > cfg.start_after]
@@ -100,6 +112,24 @@ def to_published(df: pd.DataFrame, cfg: IngestionConfig) -> pd.DataFrame:
         "vwc": filtered["vwcO"].astype(float).round(2).tolist(),
         "soil_temp": filtered["CT"].apply(_ct_to_celsius).round(4).tolist(),
     })
+
+    # Merge weather data if provided
+    if weather_df is not None and not weather_df.empty:
+        # Extract date (YYYY-MM-DD) from timestamp
+        out["_date"] = pd.to_datetime(out["date"]).dt.strftime("%Y-%m-%d")
+        out = out.merge(
+            weather_df,
+            left_on="_date",
+            right_index=True,
+            how="left",
+        )
+        out = out.drop(columns=["_date"])
+    else:
+        # Add empty weather columns if no weather data
+        out["air_temp"] = None
+        out["precip_1h"] = None
+        out["sunshine_1h"] = None
+
     return out.reset_index(drop=True)
 
 
