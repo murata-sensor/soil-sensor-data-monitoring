@@ -34,6 +34,7 @@ export interface UserSettings {
   panelSettings: Record<string, PanelSettings>; // keyed by panel id
   layout: LayoutItem[] | null; // null = use default
   deviceColors: DeviceColorMap;
+  showAirTemperature: boolean;
 }
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -41,6 +42,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   panelSettings: {},
   layout: null,
   deviceColors: {},
+  showAirTemperature: false,
 };
 
 function storageKey(email: string): string {

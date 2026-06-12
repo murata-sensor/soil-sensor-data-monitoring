@@ -18,7 +18,7 @@ import {
   type EventRow, type SourceRow, type ThemePanel,
 } from "../types";
 import type { NormalizedRow } from "../adapters";
-import { ConsentRequiredError, requestConsentToken } from "../auth/google";
+import { ConsentRequiredError, requestConsentToken, signOut } from "../auth/google";
 import {
   type DateRangeType, type DeviceColorMap,
   type PanelSettings, type UserSettings,
@@ -42,6 +42,22 @@ const DATE_RANGE_OPTIONS: { value: DateRangeType; label: string }[] = [
   { value: "custom", label: "カスタム" },
 ];
 
+function getEventLabelYAdjust(): number {
+  // Scriptable yAdjust anchored to chart height so label stays near top
+  // independent of window size.
+  const scriptable = (ctx: { chart?: { chartArea?: { top: number; bottom: number } } }) => {
+    const area = ctx?.chart?.chartArea;
+    if (!area) return -8;
+    const height = Math.max(0, area.bottom - area.top);
+    return -Math.max(8, Math.floor(height / 2) - 6);
+  };
+  return scriptable as unknown as number;
+}
+
+type SettingsPanelInfo = Pick<ThemePanel, "id" | "title" | "metric"> & {
+  displayName?: string;
+};
+
 function downloadCsv(filename: string, rows: NormalizedRow[]) {
   if (!rows.length) return;
   const headers = Array.from(new Set<string>(
@@ -62,7 +78,7 @@ function downloadCsv(filename: string, rows: NormalizedRow[]) {
 }
 
 export default function Dashboard() {
-  const { user, theme, setTheme, selectedSourceId, setSelectedSource } = useApp();
+  const { user, theme, setUser, setTheme, selectedSourceId, setSelectedSource } = useApp();
   const [, setSources] = useState<SourceRow[]>([]);
   const [allowed, setAllowed] = useState<SourceRow[]>([]);
   const [rows, setRows] = useState<NormalizedRow[]>([]);
@@ -171,10 +187,52 @@ export default function Dashboard() {
     return null;
   }, [layouts, selectedSourceId, selected, filteredRows]);
 
+  const settingsPanels = useMemo(() => {
+    if (customLayout) {
+      return customLayout.panels
+        .filter((panel): panel is LayoutConfig["panels"][number] & { type: "chart" } => panel.type === "chart")
+        .map((panel): SettingsPanelInfo => {
+          const deviceRef = panel.deviceRef;
+          const deviceId = deviceRef !== undefined
+            ? customLayout.devices?.[deviceRef]
+            : panel.deviceFilter?.[0];
+          const rawLabel = deviceRef !== undefined
+            ? (customLayout.deviceLabels?.[deviceRef] ?? deviceId)
+            : deviceId;
+          const shortLabel = rawLabel ? rawLabel.split("\n")[0] : undefined;
+          return {
+            id: panel.id,
+            title: panel.title,
+            metric: panel.metric,
+            displayName: shortLabel ? `${panel.title} [${shortLabel}]` : panel.title,
+          };
+        });
+    }
+    return panels;
+  }, [customLayout, panels]);
+
+  const showAirTemperature = settings?.showAirTemperature ?? false;
+
+  const visiblePanels = useMemo(
+    () => panels.filter((p) => showAirTemperature || p.metric !== "air_temp_c"),
+    [panels, showAirTemperature],
+  );
+
+  const visibleCustomLayout = useMemo(() => {
+    if (!customLayout) return null;
+    if (showAirTemperature) return customLayout;
+    return {
+      ...customLayout,
+      panels: customLayout.panels.filter(
+        (panel) => panel.type !== "chart" || panel.metric !== "air_temp_c",
+      ),
+    };
+  }, [customLayout, showAirTemperature]);
+
   // Layout for react-grid-layout
   const defaultLayout = useMemo<LayoutItem[]>(
-    () => panels.map((p) => ({ i: p.id, x: p.x, y: p.y, w: p.w, h: p.h, minW: 3, minH: 2 })),
-    [panels],
+    () => visiblePanels.map((p) => ({ i: p.id, x: p.x, y: p.y, w: p.w, h: p.h, minW: 3, minH: 2 })),
+    [visiblePanels],
   );
   const currentLayout: LayoutItem[] = settings?.layout
     ? settings.layout.map((l) => ({ ...l, minW: 3, minH: 2 }))
@@ -284,6 +342,15 @@ export default function Dashboard() {
           {isAdmin && (
             <a href="./admin" className="px-3 py-1 rounded bg-slate-800 text-white">管理</a>
           )}
+          <button
+            onClick={() => {
+              signOut();
+              setUser(null);
+            }}
+            className="px-3 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+          >
+            ログアウト
+          </button>
         </div>
       </header>
 
@@ -295,7 +362,7 @@ export default function Dashboard() {
       <main className="p-4">
         {customLayout ? (
           <CustomLayoutDashboard
-            layout={customLayout}
+            layout={visibleCustomLayout || customLayout}
             rows={filteredRows}
             events={visibleEvents}
             panelSettings={settings?.panelSettings}
@@ -304,7 +371,7 @@ export default function Dashboard() {
         ) : (
           <GridContainer
             layout={currentLayout}
-            panels={panels}
+            panels={visiblePanels}
             filteredRows={filteredRows}
             visibleEvents={visibleEvents}
             colors={theme.chartColors}
@@ -317,7 +384,7 @@ export default function Dashboard() {
       {showSettings && settings && (
         <SettingsModal
           settings={settings}
-          panels={panels}
+          panels={settingsPanels}
           rows={filteredRows}
           onSave={(s) => { updateSettings(s); setShowSettings(false); }}
           onClose={() => setShowSettings(false)}
@@ -386,14 +453,28 @@ function Panel({ panel, rows, events, colors, panelSettings, deviceColors }: {
     () => buildDatasets(panel, rows, colors, deviceColors),
     [panel, rows, colors, deviceColors],
   );
-  const annotations = useMemo(() => events.map((e, i) => ({
+  const annotations = useMemo(() => events
+    .filter((e) => !e.deviceId) // non-custom panels have no device context; skip per-device events
+    .map((e, i) => ({
     [`ev-${i}`]: {
       type: "line" as const, xMin: parseTs(e.date), xMax: parseTs(e.date),
       borderColor: e.color || "#ef4444", borderWidth: 1,
       borderDash: [4, 2],
-      label: { content: e.label, display: true, position: "start" as const, backgroundColor: "rgba(0,0,0,0.7)", color: "#fff", font: { size: 9 } },
+      label: {
+        content: e.label,
+        display: true,
+        position: "start" as const,
+        xAdjust: 6,
+        yAdjust: getEventLabelYAdjust(),
+        backgroundColor: "rgba(0,0,0,0.72)",
+        color: "#fff",
+        font: { size: 9 },
+        padding: 2,
+      },
     },
   })).reduce((acc, cur) => ({ ...acc, ...cur }), {}), [events]);
+
+  const shouldShowEvents = panel.metric !== "air_temp_c";
 
   const yMin = panelSettings?.yMin ?? panel.yMin;
   const yMax = panelSettings?.yMax ?? panel.yMax;
@@ -422,7 +503,7 @@ function Panel({ panel, rows, events, colors, panelSettings, deviceColors }: {
             plugins: {
               legend: { display: true, position: "bottom" as const },
               tooltip: { mode: "nearest", intersect: false },
-              annotation: { annotations },
+              annotation: { annotations: shouldShowEvents ? annotations : {} },
             },
             elements: {
               point: { radius: showPoints ? 2 : 0 },
@@ -467,7 +548,7 @@ function buildDatasets(
 
 function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout }: {
   settings: UserSettings;
-  panels: ThemePanel[];
+  panels: SettingsPanelInfo[];
   rows: NormalizedRow[];
   onSave: (s: Partial<UserSettings>) => void;
   onClose: () => void;
@@ -475,6 +556,7 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout 
 }) {
   const [panelSettings, setPanelSettings] = useState(settings.panelSettings);
   const [deviceColors, setDeviceColors] = useState(settings.deviceColors);
+  const [showAirTemperature, setShowAirTemperature] = useState(settings.showAirTemperature ?? false);
 
   // Collect unique device IDs from the data
   const deviceIds = useMemo(() => {
@@ -493,12 +575,28 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout 
     }).map((p) => ({ metric: p.metric, title: p.title }));
   }, [panels]);
 
-  const applyBatchYAxis = (metric: string, yMin?: number, yMax?: number) => {
+  const groupedPanels = useMemo(
+    () => uniqueMetrics.map((m) => ({
+      ...m,
+      panels: panels.filter((p) => p.metric === m.metric),
+    })),
+    [panels, uniqueMetrics],
+  );
+
+  const applyBatchYAxis = (
+    metric: string,
+    patch: { yMin?: number; yMax?: number; updateMin?: boolean; updateMax?: boolean },
+  ) => {
     setPanelSettings((prev) => {
       const next = { ...prev };
       for (const p of panels) {
         if (p.metric === metric) {
-          next[p.id] = { ...next[p.id], yMin, yMax };
+          const current = next[p.id] || {};
+          next[p.id] = {
+            ...current,
+            ...(patch.updateMin ? { yMin: patch.yMin } : {}),
+            ...(patch.updateMax ? { yMax: patch.yMax } : {}),
+          };
         }
       }
       return next;
@@ -529,14 +627,14 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout 
                   placeholder="auto"
                   onChange={(e) => {
                     const val = e.target.value ? Number(e.target.value) : undefined;
-                    applyBatchYAxis(metric, val, undefined);
+                    applyBatchYAxis(metric, { yMin: val, updateMin: true });
                   }} />
                 <label>Max:</label>
                 <input type="number" step="any" className="border rounded w-16 px-1"
                   placeholder="auto"
                   onChange={(e) => {
                     const val = e.target.value ? Number(e.target.value) : undefined;
-                    applyBatchYAxis(metric, undefined, val);
+                    applyBatchYAxis(metric, { yMax: val, updateMax: true });
                   }} />
                 <button
                   className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
@@ -545,7 +643,12 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout 
                     const first = panels.find((p) => p.metric === metric && panelSettings[p.id]);
                     if (first) {
                       const ps = panelSettings[first.id];
-                      applyBatchYAxis(metric, ps?.yMin, ps?.yMax);
+                      applyBatchYAxis(metric, {
+                        yMin: ps?.yMin,
+                        yMax: ps?.yMax,
+                        updateMin: true,
+                        updateMax: true,
+                      });
                     }
                   }}
                 >
@@ -559,34 +662,49 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout 
         {/* Panel axis settings */}
         <section className="mb-6">
           <h3 className="font-semibold text-sm mb-2 text-slate-700">パネル設定（Y軸）</h3>
-          <div className="space-y-2">
-            {panels.map((p) => {
-              const ps = panelSettings[p.id] || {};
-              const update = (patch: Partial<PanelSettings>) => {
-                setPanelSettings((prev) => ({ ...prev, [p.id]: { ...ps, ...patch } }));
-              };
-              return (
-                <div key={p.id} className="flex items-center gap-2 text-xs">
-                  <span className="w-32 truncate font-medium">{p.title}</span>
-                  <label>Min:</label>
-                  <input type="number" step="any" className="border rounded w-16 px-1"
-                    value={ps.yMin ?? ""} placeholder="auto"
-                    onChange={(e) => update({
-                      yMin: e.target.value ? Number(e.target.value) : undefined,
-                    })} />
-                  <label>Max:</label>
-                  <input type="number" step="any" className="border rounded w-16 px-1"
-                    value={ps.yMax ?? ""} placeholder="auto"
-                    onChange={(e) => update({
-                      yMax: e.target.value ? Number(e.target.value) : undefined,
-                    })} />
-                  <label>ラベル:</label>
-                  <input type="text" className="border rounded w-24 px-1"
-                    value={ps.yLabel ?? ""} placeholder={p.title}
-                    onChange={(e) => update({ yLabel: e.target.value || undefined })} />
+          <div className="space-y-4">
+            {groupedPanels.map((group) => (
+              <div key={group.metric} className="border border-slate-200 rounded p-2">
+                <div className="text-xs font-semibold text-slate-600 mb-2">
+                  {group.title} ({group.panels.length})
                 </div>
-              );
-            })}
+                <div className="space-y-2">
+                  {group.panels.map((p) => {
+                    const ps = panelSettings[p.id] || {};
+                    const update = (patch: Partial<PanelSettings>) => {
+                      setPanelSettings((prev) => {
+                        const current = prev[p.id] || {};
+                        return { ...prev, [p.id]: { ...current, ...patch } };
+                      });
+                    };
+                    return (
+                      <div key={p.id} className="flex items-center gap-2 text-xs">
+                        <span className="w-48 truncate font-medium" title={p.displayName || p.title}>
+                          {p.displayName || p.title}
+                        </span>
+                        <span className="w-16 truncate font-mono text-slate-500" title={p.id}>{p.id}</span>
+                        <label>Min:</label>
+                        <input type="number" step="any" className="border rounded w-16 px-1"
+                          value={ps.yMin ?? ""} placeholder="auto"
+                          onChange={(e) => update({
+                            yMin: e.target.value ? Number(e.target.value) : undefined,
+                          })} />
+                        <label>Max:</label>
+                        <input type="number" step="any" className="border rounded w-16 px-1"
+                          value={ps.yMax ?? ""} placeholder="auto"
+                          onChange={(e) => update({
+                            yMax: e.target.value ? Number(e.target.value) : undefined,
+                          })} />
+                        <label>ラベル:</label>
+                        <input type="text" className="border rounded w-24 px-1"
+                          value={ps.yLabel ?? ""} placeholder={p.title}
+                          onChange={(e) => update({ yLabel: e.target.value || undefined })} />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </section>
 
@@ -611,6 +729,19 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout 
           </div>
         </section>
 
+        {/* Metric visibility */}
+        <section className="mb-6">
+          <h3 className="font-semibold text-sm mb-2 text-slate-700">表示設定</h3>
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={showAirTemperature}
+              onChange={(e) => setShowAirTemperature(e.target.checked)}
+            />
+            <span>air temperature（外気温）を表示</span>
+          </label>
+        </section>
+
         {/* Actions */}
         <div className="flex gap-2 justify-between">
           <button onClick={onResetLayout}
@@ -623,7 +754,7 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout 
               キャンセル
             </button>
             <button
-              onClick={() => onSave({ panelSettings, deviceColors })}
+              onClick={() => onSave({ panelSettings, deviceColors, showAirTemperature })}
               className="px-4 py-1 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-700">
               保存
             </button>
