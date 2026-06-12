@@ -395,7 +395,15 @@ function ChartPanel({
       className="h-full rounded-lg p-2 flex flex-col panel-drag-handle cursor-move"
       style={{ background: surface, color: textColor }}
     >
-      <h4 className="text-xs font-semibold mb-0.5 opacity-80 truncate">{panel.title}</h4>
+      <h4 className="text-xs font-semibold mb-0.5 opacity-80 truncate">
+        {panel.title}
+        {panel.deviceRef !== undefined && devices?.[panel.deviceRef] && (
+          <span className="ml-1 font-normal opacity-70">[{devices[panel.deviceRef]}]</span>
+        )}
+        {panel.deviceRef === undefined && panel.deviceFilter?.length === 1 && (
+          <span className="ml-1 font-normal opacity-70">[{panel.deviceFilter[0]}]</span>
+        )}
+      </h4>
       <div className="relative flex-1 min-h-0">
         <Line
           data={{ datasets }}
