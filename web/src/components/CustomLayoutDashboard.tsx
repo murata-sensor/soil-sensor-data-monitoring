@@ -142,9 +142,8 @@ export function CustomLayoutDashboard({
           breakpoints={{ lg: 996, md: 768, sm: 480 }}
           cols={{ lg: cols, md: Math.max(4, Math.floor(cols / 2)), sm: 2 }}
           rowHeight={rowHeight}
-          onLayoutChange={isMobile ? undefined : handleLayoutChange}
-          dragConfig={{ handle: ".panel-drag-handle", enabled: !isMobile }}
-          resizeConfig={{ enabled: !isMobile, handles: ["se"] }}
+          onLayoutChange={handleLayoutChange}
+          dragConfig={{ handle: ".panel-drag-handle" }}
           margin={[4, 4]}
         >
           {layout.panels.map((panel) => (

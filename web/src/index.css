@@ -10,7 +10,7 @@ body {
 }
 
 /* Improve touch targets on mobile */
-@media (max-width: 640px) {
+@media (max-width: 480px) {
   select, button, input {
     min-height: 36px;
   }
@@ -19,5 +19,14 @@ body {
   }
   .panel-drag-handle {
     cursor: default;
+  }
+  .react-grid-layout {
+    pointer-events: none;
+  }
+  .react-grid-layout > * {
+    pointer-events: auto;
+  }
+  .react-grid-layout .react-resizable-handle {
+    display: none;
   }
 }
