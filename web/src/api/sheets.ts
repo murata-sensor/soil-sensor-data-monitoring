@@ -16,13 +16,23 @@ import type { LayoutConfig } from "../layoutConfig";
 const REGISTRY_ID = import.meta.env.VITE_REGISTRY_SPREADSHEET_ID;
 const PROXY_URL = import.meta.env.VITE_GAS_PROXY_URL;
 
+export class RegistryAccessDeniedError extends Error {
+  constructor(range: string) {
+    super(`スプレッドシートへのアクセス権がありません (${range})`);
+    this.name = "RegistryAccessDeniedError";
+  }
+}
+
 async function sheetsGet(spreadsheetId: string, range: string): Promise<string[][]> {
   const token = await getAccessToken();
   const url =
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}` +
     `/values/${encodeURIComponent(range)}`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) throw new Error(`Sheets API ${res.status} on ${range}`);
+  if (!res.ok) {
+    if (res.status === 403) throw new RegistryAccessDeniedError(range);
+    throw new Error(`Sheets API ${res.status} on ${range}`);
+  }
   const json = (await res.json()) as { values?: string[][] };
   return json.values ?? [];
 }
@@ -58,8 +68,81 @@ export async function readRegistry(range: string): Promise<string[][]> {
   return sheetsGet(REGISTRY_ID, range);
 }
 
+/** Result of loading all registry sheets at once. */
+export interface RegistryData {
+  sources: SourceRow[];
+  users: UserRow[];
+  acl: AclRow[];
+  events: EventRow[];
+  theme: Theme | null;
+  layouts: LayoutConfig[];
+}
+
+/**
+ * Load all registry data. Tries direct Sheets API first; on 403 falls back
+ * to the GAS proxy (action=registry) so users without direct spreadsheet
+ * access can still use the app.
+ */
+export async function loadAllRegistry(idToken: string): Promise<RegistryData> {
+  try {
+    const [src, users, acl, ev, t, lays] = await Promise.all([
+      loadSources(), loadUsers(), loadAcl(), loadEvents(), loadTheme(), loadLayouts(),
+    ]);
+    return { sources: src, users, acl, events: ev, theme: t, layouts: lays };
+  } catch (e) {
+    if (e instanceof RegistryAccessDeniedError && PROXY_URL) {
+      return loadRegistryViaProxy(idToken);
+    }
+    throw e;
+  }
+}
+
+async function loadRegistryViaProxy(idToken: string): Promise<RegistryData> {
+  if (!PROXY_URL) throw new Error("VITE_GAS_PROXY_URL is not set");
+  const res = await fetch(PROXY_URL, {
+    method: "POST",
+    body: JSON.stringify({ idToken, action: "registry" }),
+  });
+  if (!res.ok) throw new Error(`proxy ${res.status}`);
+  const json = (await res.json()) as {
+    ok: boolean;
+    error?: string;
+    sources?: string[][];
+    users?: string[][];
+    acl?: string[][];
+    events?: string[][];
+    theme?: string[][];
+    layouts?: string[][];
+  };
+  if (!json.ok) {
+    if (json.error === "user_not_registered") {
+      throw new UserNotRegisteredError();
+    }
+    throw new Error(json.error || "proxy registry denied");
+  }
+  return {
+    sources: parseSources(toObjects<Record<string, string>>(json.sources ?? [])),
+    users: parseUsers(toObjects<Record<string, string>>(json.users ?? [])),
+    acl: parseAcl(toObjects<Record<string, string>>(json.acl ?? [])),
+    events: parseEvents(toObjects<Record<string, string>>(json.events ?? [])),
+    theme: parseTheme(json.theme ?? []),
+    layouts: parseLayouts(json.layouts ?? []),
+  };
+}
+
+export class UserNotRegisteredError extends Error {
+  constructor() {
+    super("user_not_registered");
+    this.name = "UserNotRegisteredError";
+  }
+}
+
 export async function loadUsers(): Promise<UserRow[]> {
   const raw = toObjects<Record<string, string>>(await readRegistry("users!A1:Z"));
+  return parseUsers(raw);
+}
+
+function parseUsers(raw: Record<string, string>[]): UserRow[] {
   return raw.map((r) => ({
     email: normalizeEmail(r.email),
     role: ((r.role || "viewer").trim().toLowerCase() as UserRow["role"]),
@@ -69,6 +152,10 @@ export async function loadUsers(): Promise<UserRow[]> {
 
 export async function loadSources(): Promise<SourceRow[]> {
   const raw = toObjects<Record<string, string>>(await readRegistry("sources!A1:Z"));
+  return parseSources(raw);
+}
+
+function parseSources(raw: Record<string, string>[]): SourceRow[] {
   return raw.map((r) => ({
     sourceId: (r.sourceId || "").trim(),
     displayName: (r.displayName || r.sourceId || "").trim(),
@@ -86,6 +173,10 @@ export async function loadSources(): Promise<SourceRow[]> {
 
 export async function loadAcl(): Promise<AclRow[]> {
   const raw = toObjects<Record<string, string>>(await readRegistry("acl!A1:Z"));
+  return parseAcl(raw);
+}
+
+function parseAcl(raw: Record<string, string>[]): AclRow[] {
   return raw.map((r) => ({
     email: normalizeEmail(r.email),
     sourceId: (r.sourceId || "").trim(),
@@ -95,15 +186,25 @@ export async function loadAcl(): Promise<AclRow[]> {
 
 export async function loadEvents(): Promise<EventRow[]> {
   const raw = toObjects<Record<string, string>>(await readRegistry("events!A1:Z"));
+  return parseEvents(raw);
+}
+
+function parseEvents(raw: Record<string, string>[]): EventRow[] {
   return raw.map((r) => ({
-    date: r.date, sourceId: r.sourceId, label: r.label,
+    date: r.date,
+    sourceId: r.sourceId,
+    label: r.label,
     color: r.color || undefined,
-    deviceId: r.deviceId || undefined,
+    deviceId: r.deviceId ? r.deviceId.trim() : undefined,
   })).filter((e) => e.date && e.sourceId);
 }
 
 export async function loadTheme(): Promise<Theme | null> {
   const rows = await readRegistry("theme!A1:B");
+  return parseTheme(rows);
+}
+
+function parseTheme(rows: string[][]): Theme | null {
   if (rows.length < 2) return null;
   const json = rows[1]?.[1];
   if (!json) return null;
@@ -113,22 +214,25 @@ export async function loadTheme(): Promise<Theme | null> {
 export async function loadLayouts(): Promise<LayoutConfig[]> {
   try {
     const rows = await readRegistry("layouts!A1:B");
-    if (rows.length < 2) return [];
-    // Format: each row after header is [sourceId, jsonConfig]
-    const configs: LayoutConfig[] = [];
-    for (let i = 1; i < rows.length; i++) {
-      const [, json] = rows[i];
-      if (!json) continue;
-      try {
-        const cfg = JSON.parse(json) as LayoutConfig;
-        if (cfg.sourceId) configs.push(cfg);
-      } catch { /* skip malformed */ }
-    }
-    return configs;
+    return parseLayouts(rows);
   } catch {
     // layouts sheet may not exist
     return [];
   }
+}
+
+function parseLayouts(rows: string[][]): LayoutConfig[] {
+  if (rows.length < 2) return [];
+  const configs: LayoutConfig[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const [, json] = rows[i];
+    if (!json) continue;
+    try {
+      const cfg = JSON.parse(json) as LayoutConfig;
+      if (cfg.sourceId) configs.push(cfg);
+    } catch { /* skip malformed */ }
+  }
+  return configs;
 }
 
 // ─── per-source data reads ──────────────────────────────────────────────────
@@ -138,26 +242,17 @@ export interface DataSourceResult {
   rows: NormalizedRow[];
 }
 
-async function readDirect(src: SourceRow, sheetNameOverride?: string): Promise<string[][]> {
+async function readDirect(src: SourceRow): Promise<string[][]> {
   // Read from headerRow downwards so the adapter receives the header as row 0.
-  const sheetName = (sheetNameOverride || src.sheetName).trim();
-  const range = `${sheetName}!A${src.headerRow}:ZZ`;
+  const range = `${src.sheetName}!A${src.headerRow}:ZZ`;
   return sheetsGet(src.spreadsheetId, range);
 }
 
-async function readProxy(
-  src: SourceRow,
-  idToken: string,
-  sheetNameOverride?: string,
-): Promise<string[][]> {
+async function readProxy(src: SourceRow, idToken: string): Promise<string[][]> {
   if (!PROXY_URL) throw new Error("VITE_GAS_PROXY_URL is not set for proxy access");
   const res = await fetch(PROXY_URL, {
     method: "POST",
-    body: JSON.stringify({
-      idToken,
-      sourceId: src.sourceId,
-      sheetName: sheetNameOverride || undefined,
-    }),
+    body: JSON.stringify({ idToken, sourceId: src.sourceId }),
   });
   if (!res.ok) throw new Error(`proxy ${res.status}`);
   const json = (await res.json()) as { ok: boolean; error?: string; values?: string[][] };
@@ -168,11 +263,10 @@ async function readProxy(
 export async function loadDataSource(
   source: SourceRow,
   idToken?: string,
-  options?: { sheetNameOverride?: string },
 ): Promise<DataSourceResult> {
   const values = source.accessMode === "proxy"
-    ? await readProxy(source, idToken || "", options?.sheetNameOverride)
-    : await readDirect(source, options?.sheetNameOverride);
+    ? await readProxy(source, idToken || "")
+    : await readDirect(source);
   return { source, rows: toNormalized(source.schemaType, values) };
 }
 

@@ -28,6 +28,13 @@ function doPost(e) {
   try {
     const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     const email = _proxyVerifyIdToken(body.idToken);
+
+    // Registry read action: return registry sheets for the authenticated user.
+    if (body.action === 'registry') {
+      return _handleRegistryRead(email);
+    }
+
+    // Default: source data read.
     const sourceId = String(body.sourceId || '').trim();
     if (!sourceId) return _proxyJson({ ok: false, error: 'missing sourceId' });
 
@@ -52,6 +59,45 @@ function doPost(e) {
   } catch (err) {
     return _proxyJson({ ok: false, error: String(err) });
   }
+}
+
+/**
+ * Registry read: returns sources, users, acl, events, theme, layouts
+ * for any authenticated user. ACL enforcement still happens client-side
+ * (resolveAllowedSources) and server-side for actual data reads.
+ */
+function _handleRegistryRead(email) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // Verify user is registered and enabled
+  const users = _proxySheetAsObjects(ss, PROXY_USERS_SHEET);
+  const me = users.find((u) => _proxyNormalizeEmail(u.email) === email);
+  if (!me || String(me.enabled).toUpperCase() === 'FALSE') {
+    return _proxyJson({ ok: false, error: 'user_not_registered' });
+  }
+
+  // Read all registry sheets as raw values (header + rows)
+  const result = {
+    ok: true,
+    sources: _proxySheetValues(ss, 'sources'),
+    users: _proxySheetValues(ss, 'users'),
+    acl: _proxySheetValues(ss, 'acl'),
+    events: _proxySheetValues(ss, 'events'),
+    theme: _proxySheetValues(ss, 'theme'),
+    layouts: _proxySheetValues(ss, 'layouts'),
+  };
+  return _proxyJson(result);
+}
+
+/** Returns sheet data as string[][] (header + rows), same format as Sheets API values. */
+function _proxySheetValues(ss, name) {
+  const sh = ss.getSheetByName(name);
+  if (!sh) return [];
+  const last = sh.getLastRow();
+  if (last < 1) return [];
+  return sh.getRange(1, 1, last, sh.getLastColumn())
+    .getValues()
+    .map((row) => row.map((c) => (c === null || c === undefined) ? '' : String(c)));
 }
 
 function _proxyVerifyIdToken(token) {

@@ -9,8 +9,8 @@ import "chartjs-adapter-date-fns";
 import { ResponsiveGridLayout, useContainerWidth, type Layout, type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import {
-  loadAcl, loadDataSource, loadEvents, loadLayouts, loadSources, loadTheme, loadUsers,
-  resolveAllowedSources,
+  loadAllRegistry, loadDataSource,
+  resolveAllowedSources, RegistryAccessDeniedError, UserNotRegisteredError,
 } from "../api/sheets";
 import { useApp } from "../store";
 import {
@@ -87,6 +87,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unregistered, setUnregistered] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [needsConsent, setNeedsConsent] = useState(false);
   const [settings, setSettingsState] = useState<UserSettings | null>(null);
@@ -108,9 +109,8 @@ export default function Dashboard() {
     if (!user) return;
     setNeedsConsent(false); setError(null);
     try {
-      const [src, users, acl, ev, t, lays] = await Promise.all([
-        loadSources(), loadUsers(), loadAcl(), loadEvents(), loadTheme(), loadLayouts(),
-      ]);
+      const { sources: src, users, acl, events: ev, theme: t, layouts: lays } =
+        await loadAllRegistry(user.idToken);
       setSources(src); setEvents(ev); setLayouts(lays);
       if (t) setTheme(t);
       const me = users.find((u) => u.email.toLowerCase() === user.email.toLowerCase());
@@ -124,6 +124,10 @@ export default function Dashboard() {
     } catch (e) {
       if (e instanceof ConsentRequiredError) {
         setNeedsConsent(true);
+      } else if (e instanceof RegistryAccessDeniedError) {
+        setAccessDenied(true);
+      } else if (e instanceof UserNotRegisteredError) {
+        setUnregistered(true);
       } else {
         setError(String(e));
       }
@@ -268,6 +272,24 @@ export default function Dashboard() {
           スプレッドシートへのアクセスを許可
         </button>
         {error && <p className="mt-4 text-rose-600 text-sm">{error}</p>}
+      </div>
+    );
+  }
+
+  if (accessDenied) {
+    return (
+      <div className="p-10 text-center space-y-3">
+        <p className="text-rose-600 font-semibold">スプレッドシートへのアクセス権がありません</p>
+        <p className="text-sm text-slate-600">
+          このアカウント ({user?.email}) には Registry スプレッドシートの閲覧権限がありません。<br />
+          管理者にスプレッドシートの共有設定を確認してもらってください。
+        </p>
+        <button
+          onClick={() => { signOut(); setUser(null); }}
+          className="mt-2 px-4 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 text-sm"
+        >
+          サインアウト
+        </button>
       </div>
     );
   }
