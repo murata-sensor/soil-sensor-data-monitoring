@@ -282,76 +282,78 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen" style={{ background: theme.bg, color: theme.text }}>
-      <header className="px-6 py-4 flex flex-wrap gap-2 justify-between items-center border-b"
+      <header className="px-4 sm:px-6 py-3 sm:py-4 border-b"
         style={{ background: theme.surface }}>
-        <div className="text-lg font-semibold">Soil Sensor Monitor</div>
-        <div className="flex gap-2 items-center text-sm flex-wrap">
-          <label className="text-slate-600">データソース：</label>
-          <select
-            value={selectedSourceId || ""}
-            onChange={(e) => setSelectedSource(e.target.value || null)}
-            className="border rounded px-2 py-1 bg-white min-w-[14rem]"
-          >
-            {allowed.length === 0 && <option value="">(アクセス可能なソースなし)</option>}
-            {allowed.map((s) => (
-              <option key={s.sourceId} value={s.sourceId}>
-                {s.displayName} [{s.schemaType}]
-              </option>
-            ))}
-          </select>
-
-          {/* Date range selector */}
-          <label className="text-slate-600 ml-2">表示期間：</label>
-          <select
-            value={settings?.dateRange.type || "last7d"}
-            onChange={(e) => {
-              const type = e.target.value as DateRangeType;
-              updateSettings({ dateRange: { ...settings!.dateRange, type } });
-            }}
-            className="border rounded px-2 py-1 bg-white"
-          >
-            {DATE_RANGE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-          {settings?.dateRange.type === "custom" && (
-            <>
-              <input type="date" className="border rounded px-1 py-0.5 text-xs"
-                value={settings.dateRange.start || ""}
-                onChange={(e) => updateSettings({
-                  dateRange: { ...settings.dateRange, start: e.target.value },
-                })} />
-              <span>〜</span>
-              <input type="date" className="border rounded px-1 py-0.5 text-xs"
-                value={settings.dateRange.end || ""}
-                onChange={(e) => updateSettings({
-                  dateRange: { ...settings.dateRange, end: e.target.value },
-                })} />
-            </>
-          )}
-
-          <button
-            onClick={() => selected && downloadCsv(`${selected.sourceId}.csv`, filteredRows)}
-            disabled={!filteredRows.length}
-            className="px-3 py-1 rounded bg-emerald-600 text-white disabled:opacity-50">
-            CSV ダウンロード
-          </button>
-          <button onClick={() => setShowSettings(true)}
-            className="px-3 py-1 rounded bg-indigo-600 text-white">
-            設定
-          </button>
-          {isAdmin && (
-            <a href="./admin" className="px-3 py-1 rounded bg-slate-800 text-white">管理</a>
-          )}
-          <button
-            onClick={() => {
-              signOut();
-              setUser(null);
-            }}
-            className="px-3 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
-          >
-            ログアウト
-          </button>
+        <div className="flex justify-between items-center">
+          <div className="text-base sm:text-lg font-semibold">Soil Sensor Monitor</div>
+          <div className="flex gap-1 sm:gap-2 items-center">
+            <button onClick={() => setShowSettings(true)}
+              className="px-2 sm:px-3 py-1 rounded bg-indigo-600 text-white text-xs sm:text-sm">
+              設定
+            </button>
+            {isAdmin && (
+              <a href="./admin" className="px-2 sm:px-3 py-1 rounded bg-slate-800 text-white text-xs sm:text-sm">管理</a>
+            )}
+            <button
+              onClick={() => { signOut(); setUser(null); }}
+              className="px-2 sm:px-3 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 text-xs sm:text-sm"
+            >
+              ログアウト
+            </button>
+          </div>
+        </div>
+        <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-2 text-sm">
+          <div className="flex items-center gap-2 min-w-0">
+            <label className="text-slate-600 shrink-0 text-xs sm:text-sm">データソース：</label>
+            <select
+              value={selectedSourceId || ""}
+              onChange={(e) => setSelectedSource(e.target.value || null)}
+              className="border rounded px-2 py-1 bg-white text-xs sm:text-sm min-w-0 flex-1 sm:min-w-[14rem] sm:flex-none"
+            >
+              {allowed.length === 0 && <option value="">(アクセス可能なソースなし)</option>}
+              {allowed.map((s) => (
+                <option key={s.sourceId} value={s.sourceId}>
+                  {s.displayName} [{s.schemaType}]
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <label className="text-slate-600 shrink-0 text-xs sm:text-sm">表示期間：</label>
+            <select
+              value={settings?.dateRange.type || "last7d"}
+              onChange={(e) => {
+                const type = e.target.value as DateRangeType;
+                updateSettings({ dateRange: { ...settings!.dateRange, type } });
+              }}
+              className="border rounded px-2 py-1 bg-white text-xs sm:text-sm"
+            >
+              {DATE_RANGE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            {settings?.dateRange.type === "custom" && (
+              <>
+                <input type="date" className="border rounded px-1 py-0.5 text-xs"
+                  value={settings.dateRange.start || ""}
+                  onChange={(e) => updateSettings({
+                    dateRange: { ...settings.dateRange, start: e.target.value },
+                  })} />
+                <span>〜</span>
+                <input type="date" className="border rounded px-1 py-0.5 text-xs"
+                  value={settings.dateRange.end || ""}
+                  onChange={(e) => updateSettings({
+                    dateRange: { ...settings.dateRange, end: e.target.value },
+                  })} />
+              </>
+            )}
+            <button
+              onClick={() => selected && downloadCsv(`${selected.sourceId}.csv`, filteredRows)}
+              disabled={!filteredRows.length}
+              className="px-2 sm:px-3 py-1 rounded bg-emerald-600 text-white disabled:opacity-50 text-xs sm:text-sm">
+              CSV
+            </button>
+          </div>
         </div>
       </header>
 
@@ -360,7 +362,7 @@ export default function Dashboard() {
       )}
       {loading && <div className="m-4 text-sm text-slate-500">読み込み中…</div>}
 
-      <main className="p-4">
+      <main className="p-2 sm:p-4">
         {customLayout ? (
           <CustomLayoutDashboard
             layout={visibleCustomLayout || customLayout}
@@ -628,7 +630,7 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
       onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto p-6"
+      <div className="bg-white rounded-none sm:rounded-xl shadow-xl w-full h-full sm:h-auto sm:max-w-2xl sm:max-h-[80vh] overflow-y-auto p-4 sm:p-6"
         onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-bold mb-4">ダッシュボード設定</h2>
 
@@ -637,8 +639,8 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout 
           <h3 className="font-semibold text-sm mb-2 text-slate-700">一括Y軸設定（メトリック別）</h3>
           <div className="space-y-2">
             {uniqueMetrics.map(({ metric, title }) => (
-              <div key={metric} className="flex items-center gap-2 text-xs">
-                <span className="w-36 truncate font-medium">{title}</span>
+              <div key={metric} className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="w-full sm:w-36 truncate font-medium">{title}</span>
                 <label>Min:</label>
                 <input type="number" step="any" className="border rounded w-16 px-1"
                   placeholder="auto"
@@ -695,11 +697,11 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout 
                       });
                     };
                     return (
-                      <div key={p.id} className="flex items-center gap-2 text-xs">
-                        <span className="w-48 truncate font-medium" title={p.displayName || p.title}>
+                      <div key={p.id} className="flex flex-wrap items-center gap-2 text-xs">
+                        <span className="w-full sm:w-48 truncate font-medium" title={p.displayName || p.title}>
                           {p.displayName || p.title}
                         </span>
-                        <span className="w-16 truncate font-mono text-slate-500" title={p.id}>{p.id}</span>
+                        <span className="hidden sm:inline w-16 truncate font-mono text-slate-500" title={p.id}>{p.id}</span>
                         <label>Min:</label>
                         <input type="number" step="any" className="border rounded w-16 px-1"
                           value={ps.yMin ?? ""} placeholder="auto"
@@ -728,7 +730,7 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout 
         {/* Device color settings */}
         <section className="mb-6">
           <h3 className="font-semibold text-sm mb-2 text-slate-700">デバイス線色</h3>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {deviceIds.map((id, idx) => (
               <div key={id} className="flex items-center gap-2 text-xs">
                 <span className="font-mono w-16">{id}</span>
@@ -768,12 +770,12 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout 
         </section>
 
         {/* Actions */}
-        <div className="flex gap-2 justify-between">
+        <div className="flex flex-col sm:flex-row gap-2 sm:justify-between">
           <button onClick={onResetLayout}
             className="px-3 py-1 text-sm rounded border border-slate-300 hover:bg-slate-100">
             レイアウトをリセット
           </button>
-          <div className="flex gap-2">
+          <div className="flex gap-2 justify-end">
             <button onClick={onClose}
               className="px-4 py-1 text-sm rounded border border-slate-300 hover:bg-slate-100">
               キャンセル

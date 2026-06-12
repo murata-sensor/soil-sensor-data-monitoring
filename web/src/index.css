@@ -3,4 +3,18 @@
 @tailwind utilities;
 
 :root { color-scheme: light; }
-body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Improve touch targets on mobile */
+@media (max-width: 640px) {
+  select, button, input {
+    min-height: 36px;
+  }
+  .react-grid-item {
+    touch-action: auto;
+  }
+}
