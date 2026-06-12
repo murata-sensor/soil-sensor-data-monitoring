@@ -85,7 +85,7 @@ export function CustomLayoutDashboard({
 
   // On mobile, build a stacked layout: charts get full width (2 cols),
   // text & gauge panels share a row (1 col each)
-  const gridLayout = useMemo(() => {
+  const initialLayout = useMemo(() => {
     if (!isMobile) {
       return layout.panels.map((p) => ({
         i: p.id,
@@ -138,12 +138,13 @@ export function CustomLayoutDashboard({
         <ResponsiveGridLayout
           width={width}
           className="layout"
-          layouts={{ lg: gridLayout, md: gridLayout, sm: gridLayout }}
+          layouts={{ lg: initialLayout, md: initialLayout, sm: initialLayout }}
           breakpoints={{ lg: 996, md: 768, sm: 480 }}
           cols={{ lg: cols, md: Math.max(4, Math.floor(cols / 2)), sm: 2 }}
           rowHeight={rowHeight}
-          onLayoutChange={handleLayoutChange}
-          dragConfig={{ handle: ".panel-drag-handle" }}
+          onLayoutChange={isMobile ? undefined : handleLayoutChange}
+          dragConfig={{ handle: ".panel-drag-handle", enabled: !isMobile }}
+          resizeConfig={{ enabled: !isMobile, handles: ["se"] }}
           margin={[4, 4]}
         >
           {layout.panels.map((panel) => (

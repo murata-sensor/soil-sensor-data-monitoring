@@ -447,7 +447,7 @@ function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, se
           cols={{ lg: 12, md: 8, sm: 4 }}
           rowHeight={80}
           onLayoutChange={onLayoutChange}
-          dragConfig={{ handle: ".panel-drag-handle" }}
+          dragConfig={{ handle: ".panel-drag-handle", enabled: true }}
         >
           {panels.map((p) => (
             <div key={p.id}>
