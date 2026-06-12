@@ -4,11 +4,12 @@ import {
   CategoryScale, Chart as ChartJS, Filler, Legend, LinearScale, LineElement,
   PointElement, TimeScale, Title, Tooltip,
 } from "chart.js";
+import annotationPlugin from "chartjs-plugin-annotation";
 import "chartjs-adapter-date-fns";
 import { ResponsiveGridLayout, useContainerWidth, type Layout, type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import {
-  loadAcl, loadDataSource, loadEvents, loadSources, loadTheme, loadUsers,
+  loadAcl, loadDataSource, loadEvents, loadLayouts, loadSources, loadTheme, loadUsers,
   resolveAllowedSources,
 } from "../api/sheets";
 import { useApp } from "../store";
@@ -23,10 +24,13 @@ import {
   type PanelSettings, type UserSettings,
   dateRangeToMs, loadSettings, parseTs, saveSettings,
 } from "../settings";
+import type { LayoutConfig } from "../layoutConfig";
+import { generateDeviceColumnLayout } from "../layoutConfig";
+import { CustomLayoutDashboard } from "./CustomLayoutDashboard";
 
 ChartJS.register(
   CategoryScale, LinearScale, LineElement, PointElement, TimeScale,
-  Title, Tooltip, Legend, Filler,
+  Title, Tooltip, Legend, Filler, annotationPlugin,
 );
 
 const DATE_RANGE_OPTIONS: { value: DateRangeType; label: string }[] = [
@@ -63,6 +67,7 @@ export default function Dashboard() {
   const [allowed, setAllowed] = useState<SourceRow[]>([]);
   const [rows, setRows] = useState<NormalizedRow[]>([]);
   const [events, setEvents] = useState<EventRow[]>([]);
+  const [layouts, setLayouts] = useState<LayoutConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unregistered, setUnregistered] = useState(false);
@@ -87,10 +92,10 @@ export default function Dashboard() {
     if (!user) return;
     setNeedsConsent(false); setError(null);
     try {
-      const [src, users, acl, ev, t] = await Promise.all([
-        loadSources(), loadUsers(), loadAcl(), loadEvents(), loadTheme(),
+      const [src, users, acl, ev, t, lays] = await Promise.all([
+        loadSources(), loadUsers(), loadAcl(), loadEvents(), loadTheme(), loadLayouts(),
       ]);
-      setSources(src); setEvents(ev);
+      setSources(src); setEvents(ev); setLayouts(lays);
       if (t) setTheme(t);
       const me = users.find((u) => u.email.toLowerCase() === user.email.toLowerCase());
       if (!me || !me.enabled) { setUnregistered(true); return; }
@@ -148,6 +153,23 @@ export default function Dashboard() {
       return ms >= range.start && ms <= range.end;
     });
   }, [rows, settings]);
+
+  // Check if there's a custom layout for this source
+  const customLayout = useMemo(() => {
+    // First check for explicitly configured layout
+    const explicit = layouts.find((l) => l.sourceId === selectedSourceId);
+    if (explicit) return explicit;
+    // For remote-ftp sources with data, auto-generate column layout
+    if (selected?.schemaType === "remote-ftp" && filteredRows.length > 0) {
+      const devices = Array.from(new Set(filteredRows.map((r) => r.deviceId).filter(Boolean) as string[])).sort();
+      if (devices.length > 0) {
+        return generateDeviceColumnLayout(selected.sourceId, devices, {
+          title: selected.displayName,
+        });
+      }
+    }
+    return null;
+  }, [layouts, selectedSourceId, selected, filteredRows]);
 
   // Layout for react-grid-layout
   const defaultLayout = useMemo<LayoutItem[]>(
@@ -271,15 +293,25 @@ export default function Dashboard() {
       {loading && <div className="m-4 text-sm text-slate-500">読み込み中…</div>}
 
       <main className="p-4">
-        <GridContainer
-          layout={currentLayout}
-          panels={panels}
-          filteredRows={filteredRows}
-          visibleEvents={visibleEvents}
-          colors={theme.chartColors}
-          settings={settings}
-          onLayoutChange={handleLayoutChange}
-        />
+        {customLayout ? (
+          <CustomLayoutDashboard
+            layout={customLayout}
+            rows={filteredRows}
+            events={visibleEvents}
+            panelSettings={settings?.panelSettings}
+            deviceColors={settings?.deviceColors}
+          />
+        ) : (
+          <GridContainer
+            layout={currentLayout}
+            panels={panels}
+            filteredRows={filteredRows}
+            visibleEvents={visibleEvents}
+            colors={theme.chartColors}
+            settings={settings}
+            onLayoutChange={handleLayoutChange}
+          />
+        )}
       </main>
 
       {showSettings && settings && (
@@ -354,11 +386,14 @@ function Panel({ panel, rows, events, colors, panelSettings, deviceColors }: {
     () => buildDatasets(panel, rows, colors, deviceColors),
     [panel, rows, colors, deviceColors],
   );
-  const annotations = useMemo(() => events.map((e) => ({
-    type: "line" as const, xMin: e.date, xMax: e.date,
-    borderColor: e.color || "#ef4444", borderWidth: 1,
-    label: { content: e.label, display: true },
-  })), [events]);
+  const annotations = useMemo(() => events.map((e, i) => ({
+    [`ev-${i}`]: {
+      type: "line" as const, xMin: parseTs(e.date), xMax: parseTs(e.date),
+      borderColor: e.color || "#ef4444", borderWidth: 1,
+      borderDash: [4, 2],
+      label: { content: e.label, display: true, position: "start" as const, backgroundColor: "rgba(0,0,0,0.7)", color: "#fff", font: { size: 9 } },
+    },
+  })).reduce((acc, cur) => ({ ...acc, ...cur }), {}), [events]);
 
   const yMin = panelSettings?.yMin ?? panel.yMin;
   const yMax = panelSettings?.yMax ?? panel.yMax;
@@ -387,7 +422,6 @@ function Panel({ panel, rows, events, colors, panelSettings, deviceColors }: {
             plugins: {
               legend: { display: true, position: "bottom" as const },
               tooltip: { mode: "nearest", intersect: false },
-              // @ts-expect-error annotation plugin not registered; harmless if absent
               annotation: { annotations },
             },
             elements: {
@@ -449,6 +483,28 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout 
     return Array.from(set).sort();
   }, [rows]);
 
+  // Collect unique metrics for batch Y-axis control
+  const uniqueMetrics = useMemo(() => {
+    const seen = new Set<string>();
+    return panels.filter((p) => {
+      if (seen.has(p.metric)) return false;
+      seen.add(p.metric);
+      return true;
+    }).map((p) => ({ metric: p.metric, title: p.title }));
+  }, [panels]);
+
+  const applyBatchYAxis = (metric: string, yMin?: number, yMax?: number) => {
+    setPanelSettings((prev) => {
+      const next = { ...prev };
+      for (const p of panels) {
+        if (p.metric === metric) {
+          next[p.id] = { ...next[p.id], yMin, yMax };
+        }
+      }
+      return next;
+    });
+  };
+
   const DEFAULT_PALETTE = [
     "#0ea5e9", "#22c55e", "#eab308", "#ef4444", "#a855f7",
     "#14b8a6", "#f97316", "#ec4899", "#6366f1", "#84cc16",
@@ -460,6 +516,45 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout 
       <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto p-6"
         onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-bold mb-4">ダッシュボード設定</h2>
+
+        {/* Batch Y-axis settings by metric */}
+        <section className="mb-6">
+          <h3 className="font-semibold text-sm mb-2 text-slate-700">一括Y軸設定（メトリック別）</h3>
+          <div className="space-y-2">
+            {uniqueMetrics.map(({ metric, title }) => (
+              <div key={metric} className="flex items-center gap-2 text-xs">
+                <span className="w-36 truncate font-medium">{title}</span>
+                <label>Min:</label>
+                <input type="number" step="any" className="border rounded w-16 px-1"
+                  placeholder="auto"
+                  onChange={(e) => {
+                    const val = e.target.value ? Number(e.target.value) : undefined;
+                    applyBatchYAxis(metric, val, undefined);
+                  }} />
+                <label>Max:</label>
+                <input type="number" step="any" className="border rounded w-16 px-1"
+                  placeholder="auto"
+                  onChange={(e) => {
+                    const val = e.target.value ? Number(e.target.value) : undefined;
+                    applyBatchYAxis(metric, undefined, val);
+                  }} />
+                <button
+                  className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                  onClick={() => {
+                    // Find first panel of this metric with settings and apply to all
+                    const first = panels.find((p) => p.metric === metric && panelSettings[p.id]);
+                    if (first) {
+                      const ps = panelSettings[first.id];
+                      applyBatchYAxis(metric, ps?.yMin, ps?.yMax);
+                    }
+                  }}
+                >
+                  一括適用
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
 
         {/* Panel axis settings */}
         <section className="mb-6">

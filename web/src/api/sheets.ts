@@ -1,7 +1,7 @@
 /**
  * Sheets API access layer.
  *
- * - `readRegistry()` reads the registry spreadsheet (sources/users/acl/theme/events).
+ * - `readRegistry()` reads the registry spreadsheet (sources/users/acl/theme/events/layouts).
  * - `loadDataSource(source)` reads one data-source spreadsheet via direct or proxy
  *   mode and runs the matching schema adapter.
  */
@@ -11,6 +11,7 @@ import { toNormalized, type NormalizedRow } from "../adapters";
 import type {
   AclRow, EventRow, SourceRow, Theme, UserRow,
 } from "../types";
+import type { LayoutConfig } from "../layoutConfig";
 
 const REGISTRY_ID = import.meta.env.VITE_REGISTRY_SPREADSHEET_ID;
 const PROXY_URL = import.meta.env.VITE_GAS_PROXY_URL;
@@ -106,6 +107,27 @@ export async function loadTheme(): Promise<Theme | null> {
   const json = rows[1]?.[1];
   if (!json) return null;
   try { return JSON.parse(json) as Theme; } catch { return null; }
+}
+
+export async function loadLayouts(): Promise<LayoutConfig[]> {
+  try {
+    const rows = await readRegistry("layouts!A1:B");
+    if (rows.length < 2) return [];
+    // Format: each row after header is [sourceId, jsonConfig]
+    const configs: LayoutConfig[] = [];
+    for (let i = 1; i < rows.length; i++) {
+      const [, json] = rows[i];
+      if (!json) continue;
+      try {
+        const cfg = JSON.parse(json) as LayoutConfig;
+        if (cfg.sourceId) configs.push(cfg);
+      } catch { /* skip malformed */ }
+    }
+    return configs;
+  } catch {
+    // layouts sheet may not exist
+    return [];
+  }
 }
 
 // ─── per-source data reads ──────────────────────────────────────────────────
