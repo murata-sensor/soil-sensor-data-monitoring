@@ -49,6 +49,7 @@ credentials*.json
 client_secret*.json
 ftp_credentials*
 gas_url*
+layout.json
 
 # Logs
 *.log
