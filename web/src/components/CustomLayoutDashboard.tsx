@@ -32,6 +32,7 @@ interface CustomLayoutProps {
   events: EventRow[];
   panelSettings?: Record<string, PanelSettings>;
   deviceColors?: DeviceColorMap;
+  showEventLabels?: boolean;
   onLayoutChange?: (panels: LayoutPanel[]) => void;
 }
 
@@ -41,6 +42,7 @@ export function CustomLayoutDashboard({
   events,
   panelSettings,
   deviceColors,
+  showEventLabels,
   onLayoutChange,
 }: CustomLayoutProps) {
   const { width, containerRef } = useContainerWidth();
@@ -113,6 +115,7 @@ export function CustomLayoutDashboard({
                 textColor={textColor}
                 panelSettings={panelSettings?.[panel.id]}
                 deviceColors={deviceColors ?? {}}
+                showEventLabels={showEventLabels ?? true}
                 devices={layout.devices}
                 deviceLabels={layout.deviceLabels ?? layout.devices}
               />
@@ -134,6 +137,7 @@ function PanelRenderer({
   textColor,
   panelSettings,
   deviceColors,
+  showEventLabels,
   devices,
   deviceLabels,
 }: {
@@ -144,6 +148,7 @@ function PanelRenderer({
   textColor: string;
   panelSettings?: PanelSettings;
   deviceColors: DeviceColorMap;
+  showEventLabels: boolean;
   devices?: string[];
   deviceLabels?: string[];
 }) {
@@ -164,6 +169,7 @@ function PanelRenderer({
           textColor={textColor}
           panelSettings={panelSettings}
           deviceColors={deviceColors}
+          showEventLabels={showEventLabels}
           devices={devices}
         />
       );
@@ -272,6 +278,7 @@ function ChartPanel({
   textColor,
   panelSettings,
   deviceColors,
+  showEventLabels,
   devices,
 }: {
   panel: ChartPanelConfig;
@@ -281,6 +288,7 @@ function ChartPanel({
   textColor: string;
   panelSettings?: PanelSettings;
   deviceColors: DeviceColorMap;
+  showEventLabels: boolean;
   devices?: string[];
 }) {
   const resolved = useMemo(
@@ -310,7 +318,7 @@ function ChartPanel({
             borderDash: [4, 2],
             label: {
               content: e.label,
-              display: true,
+              display: showEventLabels,
               position: "start" as const,
               backgroundColor: "rgba(0,0,0,0.7)",
               color: "#fff",
@@ -320,7 +328,7 @@ function ChartPanel({
         ];
       }),
     );
-  }, [events, panel.showEvents]);
+  }, [events, panel.showEvents, showEventLabels]);
 
   const yMin = panelSettings?.yMin ?? panel.yMin;
   const yMax = panelSettings?.yMax ?? panel.yMax;

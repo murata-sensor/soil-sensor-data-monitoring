@@ -35,6 +35,7 @@ export interface UserSettings {
   layout: LayoutItem[] | null; // null = use default
   deviceColors: DeviceColorMap;
   showAirTemperature: boolean;
+  showEventLabels: boolean;
 }
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -43,6 +44,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   layout: null,
   deviceColors: {},
   showAirTemperature: false,
+  showEventLabels: true,
 };
 
 function storageKey(email: string): string {

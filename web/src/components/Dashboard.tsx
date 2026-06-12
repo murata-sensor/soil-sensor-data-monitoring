@@ -212,6 +212,7 @@ export default function Dashboard() {
   }, [customLayout, panels]);
 
   const showAirTemperature = settings?.showAirTemperature ?? false;
+  const showEventLabels = settings?.showEventLabels ?? true;
 
   const visiblePanels = useMemo(
     () => panels.filter((p) => showAirTemperature || p.metric !== "air_temp_c"),
@@ -367,6 +368,7 @@ export default function Dashboard() {
             events={visibleEvents}
             panelSettings={settings?.panelSettings}
             deviceColors={settings?.deviceColors}
+            showEventLabels={showEventLabels}
           />
         ) : (
           <GridContainer
@@ -376,6 +378,7 @@ export default function Dashboard() {
             visibleEvents={visibleEvents}
             colors={theme.chartColors}
             settings={settings}
+              showEventLabels={showEventLabels}
             onLayoutChange={handleLayoutChange}
           />
         )}
@@ -397,13 +400,14 @@ export default function Dashboard() {
 
 // ─── Grid Container (uses useContainerWidth hook) ───────────────────────────
 
-function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, settings, onLayoutChange }: {
+function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, settings, showEventLabels, onLayoutChange }: {
   layout: LayoutItem[];
   panels: ThemePanel[];
   filteredRows: NormalizedRow[];
   visibleEvents: EventRow[];
   colors: string[];
   settings: UserSettings | null;
+  showEventLabels: boolean;
   onLayoutChange: (layout: Layout) => void;
 }) {
   const { width, containerRef } = useContainerWidth();
@@ -430,6 +434,7 @@ function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, se
                 colors={colors}
                 panelSettings={settings?.panelSettings[p.id]}
                 deviceColors={settings?.deviceColors || {}}
+                showEventLabels={showEventLabels}
               />
             </div>
           ))}
@@ -441,13 +446,14 @@ function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, se
 
 // ─── Panel ──────────────────────────────────────────────────────────────────
 
-function Panel({ panel, rows, events, colors, panelSettings, deviceColors }: {
+function Panel({ panel, rows, events, colors, panelSettings, deviceColors, showEventLabels }: {
   panel: ThemePanel;
   rows: NormalizedRow[];
   events: EventRow[];
   colors: string[];
   panelSettings?: PanelSettings;
   deviceColors: DeviceColorMap;
+  showEventLabels: boolean;
 }) {
   const datasets = useMemo(
     () => buildDatasets(panel, rows, colors, deviceColors),
@@ -462,7 +468,7 @@ function Panel({ panel, rows, events, colors, panelSettings, deviceColors }: {
       borderDash: [4, 2],
       label: {
         content: e.label,
-        display: true,
+        display: showEventLabels,
         position: "start" as const,
         xAdjust: 6,
         yAdjust: getEventLabelYAdjust(),
@@ -472,7 +478,7 @@ function Panel({ panel, rows, events, colors, panelSettings, deviceColors }: {
         padding: 2,
       },
     },
-  })).reduce((acc, cur) => ({ ...acc, ...cur }), {}), [events]);
+  })).reduce((acc, cur) => ({ ...acc, ...cur }), {}), [events, showEventLabels]);
 
   const shouldShowEvents = panel.metric !== "air_temp_c";
 
@@ -557,6 +563,7 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout 
   const [panelSettings, setPanelSettings] = useState(settings.panelSettings);
   const [deviceColors, setDeviceColors] = useState(settings.deviceColors);
   const [showAirTemperature, setShowAirTemperature] = useState(settings.showAirTemperature ?? false);
+  const [showEventLabels, setShowEventLabels] = useState(settings.showEventLabels ?? true);
 
   // Collect unique device IDs from the data
   const deviceIds = useMemo(() => {
@@ -740,6 +747,14 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout 
             />
             <span>air temperature（外気温）を表示</span>
           </label>
+          <label className="mt-2 inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={showEventLabels}
+              onChange={(e) => setShowEventLabels(e.target.checked)}
+            />
+            <span>events のラベルを表示</span>
+          </label>
         </section>
 
         {/* Actions */}
@@ -754,7 +769,7 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout 
               キャンセル
             </button>
             <button
-              onClick={() => onSave({ panelSettings, deviceColors, showAirTemperature })}
+              onClick={() => onSave({ panelSettings, deviceColors, showAirTemperature, showEventLabels })}
               className="px-4 py-1 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-700">
               保存
             </button>
