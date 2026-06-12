@@ -435,7 +435,7 @@ function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, se
   onLayoutChange: (layout: Layout) => void;
 }) {
   const { width, containerRef } = useContainerWidth();
-  const isMobile = width > 0 && width < 768;
+  const isMobile = width > 0 && width < 480;
 
   return (
     <div ref={containerRef as React.Ref<HTMLDivElement>}>

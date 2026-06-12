@@ -78,7 +78,7 @@ export function CustomLayoutDashboard({
   // Fit all rows into viewport height (minus header ~60px and padding)
   // On mobile, don't compress rows — allow scrolling instead
   const viewportH = typeof window !== "undefined" ? window.innerHeight - 80 : 800;
-  const isMobile = width > 0 && width < 768;
+  const isMobile = width > 0 && width < 480;
   const rowHeight = isMobile
     ? 60
     : Math.max(30, Math.floor(viewportH / Math.max(maxRow, 1)));
