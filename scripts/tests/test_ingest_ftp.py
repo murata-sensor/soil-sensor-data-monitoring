@@ -7,6 +7,7 @@ from scripts.ingest_ftp import (
     _filter_rows_newer_than_last,
     _filter_rows_not_existing,
     _parse_ts_as_jst,
+    fetch_weather_data,
 )
 
 
@@ -124,3 +125,30 @@ def test_clamp_weather_date_range_avoids_future_end_date(monkeypatch):
 
     assert start_date == pd.Timestamp("2026-06-10").date()
     assert end_date == pd.Timestamp("2026-06-11").date()
+
+
+def test_fetch_weather_data_reads_hourly_archive_payload(monkeypatch):
+    class DummyResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b'{"hourly":{"time":["2026-06-12T00:00","2026-06-12T01:00"],"temperature_2m":[21.2,21.4],"precipitation":[1.9,0.0],"sunshine_duration":[1800,0]}}'
+
+    monkeypatch.setattr("scripts.ingest_ftp.urllib.request.urlopen", lambda *args, **kwargs: DummyResponse())
+
+    out = fetch_weather_data(
+        38.2682,
+        140.8694,
+        pd.Timestamp("2026-06-12").date(),
+        pd.Timestamp("2026-06-12").date(),
+    )
+
+    assert list(out.columns) == ["air_temp", "precip_1h", "sunshine_1h"]
+    assert str(out.index.tz) == "Asia/Tokyo"
+    assert out.iloc[0]["air_temp"] == 21.2
+    assert out.iloc[0]["precip_1h"] == 1.9
+    assert out.iloc[0]["sunshine_1h"] == 0.5

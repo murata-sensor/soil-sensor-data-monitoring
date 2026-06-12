@@ -103,6 +103,27 @@ def test_to_published_respects_start_after():
     assert pub.empty
 
 
+def test_to_published_merges_weather_by_sensor_hour():
+    df = parse_csv_text(SAMPLE)
+    weather_df = pd.DataFrame(
+        {
+            "air_temp": [21.2, 22.8],
+            "precip_1h": [1.9, 0.0],
+            "sunshine_1h": [0.5, 1.0],
+        },
+        index=pd.DatetimeIndex(
+            ["2026-06-15 09:00:00+09:00", "2026-06-15 10:00:00+09:00"],
+            name="weather_ts",
+        ),
+    )
+
+    pub = to_published(df, _cfg(), weather_df=weather_df)
+
+    assert (pub["air_temp"] == 21.2).all()
+    assert (pub["precip_1h"] == 1.9).all()
+    assert (pub["sunshine_1h"] == 0.5).all()
+
+
 def test_select_nine_am_keeps_closest_to_nine_in_window():
     df = parse_csv_text(NINE_AM_SAMPLE)
     pub = to_published(df, _cfg())

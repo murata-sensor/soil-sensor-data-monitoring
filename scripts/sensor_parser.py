@@ -93,7 +93,7 @@ def to_published(
         df: Raw sensor data DataFrame (indexed by Time in Asia/Tokyo)
         cfg: IngestionConfig with site_id and start_after timestamp
         weather_df: Optional DataFrame with weather data to merge.
-                   Must have index='date' (YYYY-MM-DD) and columns:
+                   Must have a JST DatetimeIndex and columns:
                    'air_temp', 'precip_1h', 'sunshine_1h'
     """
     if df.empty:
@@ -115,15 +115,14 @@ def to_published(
 
     # Merge weather data if provided
     if weather_df is not None and not weather_df.empty:
-        # Extract date (YYYY-MM-DD) from timestamp
-        out["_date"] = pd.to_datetime(out["date"]).dt.strftime("%Y-%m-%d")
+        out["_weather_ts"] = filtered.index.floor("h")
         out = out.merge(
-            weather_df,
-            left_on="_date",
-            right_index=True,
+            weather_df.reset_index(),
+            left_on="_weather_ts",
+            right_on="weather_ts",
             how="left",
         )
-        out = out.drop(columns=["_date"])
+        out = out.drop(columns=["_weather_ts", "weather_ts"])
     else:
         # Add empty weather columns if no weather data
         out["air_temp"] = None

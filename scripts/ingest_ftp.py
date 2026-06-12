@@ -146,18 +146,17 @@ def fetch_weather_data(
     start_date: date,
     end_date: date,
 ) -> pd.DataFrame:
-    """Fetch daily weather data from Open-Meteo API.
+    """Fetch hourly weather data from Open-Meteo API.
 
-    Returns a DataFrame indexed by date (YYYY-MM-DD) with columns:
+    Returns a DataFrame indexed by JST timestamps with columns:
     air_temp (°C), precip_1h (mm), sunshine_1h (h)
     """
     try:
-        # Open-Meteo API endpoint for historical weather data
         url = (
             "https://archive-api.open-meteo.com/v1/archive"
             f"?latitude={latitude}"
             f"&longitude={longitude}"
-            "&daily=temperature_2m_max,temperature_2m_min,precipitation_sum"
+            "&hourly=temperature_2m,precipitation,sunshine_duration"
             "&timezone=Asia%2FTokyo"
             f"&start_date={start_date.isoformat()}"
             f"&end_date={end_date.isoformat()}"
@@ -167,22 +166,30 @@ def fetch_weather_data(
         with urllib.request.urlopen(url, timeout=30) as response:
             data = json.loads(response.read().decode("utf-8"))
 
-        if "daily" not in data or "time" not in data["daily"]:
+        if "hourly" not in data or "time" not in data["hourly"]:
             log.warning("Weather API returned unexpected structure: %s", data)
             return pd.DataFrame()
 
-        daily = data["daily"]
+        hourly = data["hourly"]
         df = pd.DataFrame({
-            "date": daily["time"],
-            "air_temp": daily.get("temperature_2m_max", [None] * len(daily["time"])),
-            "precip_1h": daily.get("precipitation_sum", [None] * len(daily["time"])),
-            "sunshine_1h": [None] * len(daily["time"]),  # API doesn't return this in archive
+            "weather_ts": hourly["time"],
+            "air_temp": hourly.get("temperature_2m", [None] * len(hourly["time"])),
+            "precip_1h": hourly.get("precipitation", [None] * len(hourly["time"])),
+            "sunshine_1h": [
+                None if value is None else float(value) / 3600.0
+                for value in hourly.get("sunshine_duration", [None] * len(hourly["time"]))
+            ],
         })
 
-        df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
-        df = df.set_index("date")
+        weather_ts = pd.to_datetime(df["weather_ts"])
+        if weather_ts.dt.tz is None:
+            weather_ts = weather_ts.dt.tz_localize("Asia/Tokyo")
+        else:
+            weather_ts = weather_ts.dt.tz_convert("Asia/Tokyo")
+        df["weather_ts"] = weather_ts
+        df = df.set_index("weather_ts")
 
-        log.info("Fetched weather data for %d days", len(df))
+        log.info("Fetched weather data for %d hours", len(df))
         return df
     except Exception as e:
         log.error("Failed to fetch weather data: %s", e)
