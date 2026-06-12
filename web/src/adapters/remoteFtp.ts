@@ -9,6 +9,8 @@ export const HEADER_MAP: Record<string, keyof NormalizedRow> = {
   "number": "sensorNumber",
   "battery1": "battery_v",
   "battery1[V]": "battery_v",
+  "battery2": "battery_v",
+  "battery2[V]": "battery_v",
   "bulk_ec": "ec_bulk_dsm",
   "bulk_ec[dS/m]": "ec_bulk_dsm",
   "vwc": "vwc_pct",

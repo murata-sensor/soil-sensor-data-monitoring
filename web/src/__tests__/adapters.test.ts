@@ -96,7 +96,7 @@ describe("remote-ftp adapter", () => {
     ]);
     expect(rows).toHaveLength(1);
     expect(rows[0].deviceId).toBe("fac");
-    expect(rows[0].battery_v).toBeCloseTo(3.45);
+    expect(rows[0].battery_v).toBeCloseTo(2.812);
     expect(rows[0].ec_bulk_dsm).toBeCloseTo(0.86);
     expect(rows[0].vwc_pct).toBeCloseTo(57.5);
   });
@@ -108,7 +108,7 @@ describe("remote-ftp adapter", () => {
     ]);
     expect(rows).toHaveLength(1);
     expect(rows[0].deviceId).toBe("1ca7");
-    expect(rows[0].battery_v).toBeCloseTo(3.5175);
+    expect(rows[0].battery_v).toBeCloseTo(3.438);
     expect(rows[0].ec_bulk_dsm).toBeCloseTo(0.474);
     expect(rows[0].vwc_pct).toBeCloseTo(55.4);
     expect(rows[0].temperature_c).toBeCloseTo(22.3);
