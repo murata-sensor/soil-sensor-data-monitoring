@@ -1,0 +1,1169 @@
+{
+  "sourceId": "src-remote-a",
+  "title": "Site A",
+  "cols": 14,
+  "rowHeight": 60,
+  "bg": "#1a1a1a",
+  "surface": "#2a2a2a",
+  "textColor": "#ffffff",
+  "devices": [
+    "aaaa",
+    "bbbb",
+    "cccc",
+    "dddd",
+    "eeee",
+    "ffff",
+    "gggg"
+  ],
+  "deviceLabels": [
+    "aaaa",
+    "bbbb",
+    "cccc",
+    "dddd",
+    "eeee",
+    "ffff",
+    "gggg"
+  ],
+  "panels": [
+    {
+      "type": "text",
+      "id": "title",
+      "content": "Site A",
+      "fontSize": "1.2rem",
+      "align": "left",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "w": 14,
+        "h": 1
+      }
+    },
+    {
+      "type": "text",
+      "id": "hdr-0",
+      "contentRef": 0,
+      "fontSize": "0.75rem",
+      "align": "center",
+      "position": {
+        "x": 0,
+        "y": 1,
+        "w": 2,
+        "h": 1
+      }
+    },
+    {
+      "type": "gauge",
+      "id": "gauge-0",
+      "title": "Battery voltage[V]",
+      "deviceRef": 0,
+      "metric": "battery_v",
+      "ranges": [
+        2,
+        2.5,
+        3,
+        3.6
+      ],
+      "position": {
+        "x": 0,
+        "y": 2,
+        "w": 2,
+        "h": 2
+      }
+    },
+    {
+      "type": "chart",
+      "id": "battery_v-0",
+      "title": "Battery voltage[V]",
+      "metric": "battery_v",
+      "deviceRef": 0,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "bat"
+      },
+      "groupColors": {
+        "1": "#00cc00"
+      },
+      "yMin": 2,
+      "yMax": 3.6,
+      "showEvents": false,
+      "position": {
+        "x": 0,
+        "y": 4,
+        "w": 2,
+        "h": 2
+      }
+    },
+    {
+      "type": "chart",
+      "id": "temperature_c-0",
+      "title": "Temperature[℃]",
+      "metric": "temperature_c",
+      "deviceRef": 0,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 45,
+      "showEvents": true,
+      "position": {
+        "x": 0,
+        "y": 6,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "ec_bulk_dsm-0",
+      "title": "BulkEC[dS/m]",
+      "metric": "ec_bulk_dsm",
+      "deviceRef": 0,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "showEvents": true,
+      "position": {
+        "x": 0,
+        "y": 9,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "vwc_pct-0",
+      "title": "VWC[%]",
+      "metric": "vwc_pct",
+      "deviceRef": 0,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 70,
+      "showEvents": true,
+      "position": {
+        "x": 0,
+        "y": 12,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "air_temp_c-0",
+      "title": "Air Temperature[℃]",
+      "metric": "air_temp_c",
+      "deviceRef": 0,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 45,
+      "showEvents": true,
+      "position": {
+        "x": 0,
+        "y": 15,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "text",
+      "id": "hdr-1",
+      "contentRef": 1,
+      "fontSize": "0.75rem",
+      "align": "center",
+      "position": {
+        "x": 2,
+        "y": 1,
+        "w": 2,
+        "h": 1
+      }
+    },
+    {
+      "type": "gauge",
+      "id": "gauge-1",
+      "title": "Battery voltage[V]",
+      "deviceRef": 1,
+      "metric": "battery_v",
+      "ranges": [
+        2,
+        2.5,
+        3,
+        3.6
+      ],
+      "position": {
+        "x": 2,
+        "y": 2,
+        "w": 2,
+        "h": 2
+      }
+    },
+    {
+      "type": "chart",
+      "id": "battery_v-1",
+      "title": "Battery voltage[V]",
+      "metric": "battery_v",
+      "deviceRef": 1,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "bat"
+      },
+      "groupColors": {
+        "1": "#00cc00"
+      },
+      "yMin": 2,
+      "yMax": 3.6,
+      "showEvents": false,
+      "position": {
+        "x": 2,
+        "y": 4,
+        "w": 2,
+        "h": 2
+      }
+    },
+    {
+      "type": "chart",
+      "id": "temperature_c-1",
+      "title": "Temperature[℃]",
+      "metric": "temperature_c",
+      "deviceRef": 1,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 45,
+      "showEvents": true,
+      "position": {
+        "x": 2,
+        "y": 6,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "ec_bulk_dsm-1",
+      "title": "BulkEC[dS/m]",
+      "metric": "ec_bulk_dsm",
+      "deviceRef": 1,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "showEvents": true,
+      "position": {
+        "x": 2,
+        "y": 9,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "vwc_pct-1",
+      "title": "VWC[%]",
+      "metric": "vwc_pct",
+      "deviceRef": 1,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 70,
+      "showEvents": true,
+      "position": {
+        "x": 2,
+        "y": 12,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "air_temp_c-1",
+      "title": "Air Temperature[℃]",
+      "metric": "air_temp_c",
+      "deviceRef": 1,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 45,
+      "showEvents": true,
+      "position": {
+        "x": 2,
+        "y": 15,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "text",
+      "id": "hdr-2",
+      "contentRef": 2,
+      "fontSize": "0.75rem",
+      "align": "center",
+      "position": {
+        "x": 4,
+        "y": 1,
+        "w": 2,
+        "h": 1
+      }
+    },
+    {
+      "type": "gauge",
+      "id": "gauge-2",
+      "title": "Battery voltage[V]",
+      "deviceRef": 2,
+      "metric": "battery_v",
+      "ranges": [
+        2,
+        2.5,
+        3,
+        3.6
+      ],
+      "position": {
+        "x": 4,
+        "y": 2,
+        "w": 2,
+        "h": 2
+      }
+    },
+    {
+      "type": "chart",
+      "id": "battery_v-2",
+      "title": "Battery voltage[V]",
+      "metric": "battery_v",
+      "deviceRef": 2,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "bat"
+      },
+      "groupColors": {
+        "1": "#00cc00"
+      },
+      "yMin": 2,
+      "yMax": 3.6,
+      "showEvents": false,
+      "position": {
+        "x": 4,
+        "y": 4,
+        "w": 2,
+        "h": 2
+      }
+    },
+    {
+      "type": "chart",
+      "id": "temperature_c-2",
+      "title": "Temperature[℃]",
+      "metric": "temperature_c",
+      "deviceRef": 2,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 45,
+      "showEvents": true,
+      "position": {
+        "x": 4,
+        "y": 6,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "ec_bulk_dsm-2",
+      "title": "BulkEC[dS/m]",
+      "metric": "ec_bulk_dsm",
+      "deviceRef": 2,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "showEvents": true,
+      "position": {
+        "x": 4,
+        "y": 9,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "vwc_pct-2",
+      "title": "VWC[%]",
+      "metric": "vwc_pct",
+      "deviceRef": 2,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 70,
+      "showEvents": true,
+      "position": {
+        "x": 4,
+        "y": 12,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "air_temp_c-2",
+      "title": "Air Temperature[℃]",
+      "metric": "air_temp_c",
+      "deviceRef": 2,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 45,
+      "showEvents": true,
+      "position": {
+        "x": 4,
+        "y": 15,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "text",
+      "id": "hdr-3",
+      "contentRef": 3,
+      "fontSize": "0.75rem",
+      "align": "center",
+      "position": {
+        "x": 6,
+        "y": 1,
+        "w": 2,
+        "h": 1
+      }
+    },
+    {
+      "type": "gauge",
+      "id": "gauge-3",
+      "title": "Battery voltage[V]",
+      "deviceRef": 3,
+      "metric": "battery_v",
+      "ranges": [
+        2,
+        2.5,
+        3,
+        3.6
+      ],
+      "position": {
+        "x": 6,
+        "y": 2,
+        "w": 2,
+        "h": 2
+      }
+    },
+    {
+      "type": "chart",
+      "id": "battery_v-3",
+      "title": "Battery voltage[V]",
+      "metric": "battery_v",
+      "deviceRef": 3,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "bat"
+      },
+      "groupColors": {
+        "1": "#00cc00"
+      },
+      "yMin": 2,
+      "yMax": 3.6,
+      "showEvents": false,
+      "position": {
+        "x": 6,
+        "y": 4,
+        "w": 2,
+        "h": 2
+      }
+    },
+    {
+      "type": "chart",
+      "id": "temperature_c-3",
+      "title": "Temperature[℃]",
+      "metric": "temperature_c",
+      "deviceRef": 3,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 45,
+      "showEvents": true,
+      "position": {
+        "x": 6,
+        "y": 6,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "ec_bulk_dsm-3",
+      "title": "BulkEC[dS/m]",
+      "metric": "ec_bulk_dsm",
+      "deviceRef": 3,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "showEvents": true,
+      "position": {
+        "x": 6,
+        "y": 9,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "vwc_pct-3",
+      "title": "VWC[%]",
+      "metric": "vwc_pct",
+      "deviceRef": 3,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 70,
+      "showEvents": true,
+      "position": {
+        "x": 6,
+        "y": 12,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "air_temp_c-3",
+      "title": "Air Temperature[℃]",
+      "metric": "air_temp_c",
+      "deviceRef": 3,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 45,
+      "showEvents": true,
+      "position": {
+        "x": 6,
+        "y": 15,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "text",
+      "id": "hdr-4",
+      "contentRef": 4,
+      "fontSize": "0.75rem",
+      "align": "center",
+      "position": {
+        "x": 8,
+        "y": 1,
+        "w": 2,
+        "h": 1
+      }
+    },
+    {
+      "type": "gauge",
+      "id": "gauge-4",
+      "title": "Battery voltage[V]",
+      "deviceRef": 4,
+      "metric": "battery_v",
+      "ranges": [
+        2,
+        2.5,
+        3,
+        3.6
+      ],
+      "position": {
+        "x": 8,
+        "y": 2,
+        "w": 2,
+        "h": 2
+      }
+    },
+    {
+      "type": "chart",
+      "id": "battery_v-4",
+      "title": "Battery voltage[V]",
+      "metric": "battery_v",
+      "deviceRef": 4,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "bat"
+      },
+      "groupColors": {
+        "1": "#00cc00"
+      },
+      "yMin": 2,
+      "yMax": 3.6,
+      "showEvents": false,
+      "position": {
+        "x": 8,
+        "y": 4,
+        "w": 2,
+        "h": 2
+      }
+    },
+    {
+      "type": "chart",
+      "id": "temperature_c-4",
+      "title": "Temperature[℃]",
+      "metric": "temperature_c",
+      "deviceRef": 4,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 45,
+      "showEvents": true,
+      "position": {
+        "x": 8,
+        "y": 6,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "ec_bulk_dsm-4",
+      "title": "BulkEC[dS/m]",
+      "metric": "ec_bulk_dsm",
+      "deviceRef": 4,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "showEvents": true,
+      "position": {
+        "x": 8,
+        "y": 9,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "vwc_pct-4",
+      "title": "VWC[%]",
+      "metric": "vwc_pct",
+      "deviceRef": 4,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 70,
+      "showEvents": true,
+      "position": {
+        "x": 8,
+        "y": 12,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "air_temp_c-4",
+      "title": "Air Temperature[℃]",
+      "metric": "air_temp_c",
+      "deviceRef": 4,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 45,
+      "showEvents": true,
+      "position": {
+        "x": 8,
+        "y": 15,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "text",
+      "id": "hdr-5",
+      "contentRef": 5,
+      "fontSize": "0.75rem",
+      "align": "center",
+      "position": {
+        "x": 10,
+        "y": 1,
+        "w": 2,
+        "h": 1
+      }
+    },
+    {
+      "type": "gauge",
+      "id": "gauge-5",
+      "title": "Battery voltage[V]",
+      "deviceRef": 5,
+      "metric": "battery_v",
+      "ranges": [
+        2,
+        2.5,
+        3,
+        3.6
+      ],
+      "position": {
+        "x": 10,
+        "y": 2,
+        "w": 2,
+        "h": 2
+      }
+    },
+    {
+      "type": "chart",
+      "id": "battery_v-5",
+      "title": "Battery voltage[V]",
+      "metric": "battery_v",
+      "deviceRef": 5,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "bat"
+      },
+      "groupColors": {
+        "1": "#00cc00"
+      },
+      "yMin": 2,
+      "yMax": 3.6,
+      "showEvents": false,
+      "position": {
+        "x": 10,
+        "y": 4,
+        "w": 2,
+        "h": 2
+      }
+    },
+    {
+      "type": "chart",
+      "id": "temperature_c-5",
+      "title": "Temperature[℃]",
+      "metric": "temperature_c",
+      "deviceRef": 5,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 45,
+      "showEvents": true,
+      "position": {
+        "x": 10,
+        "y": 6,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "ec_bulk_dsm-5",
+      "title": "BulkEC[dS/m]",
+      "metric": "ec_bulk_dsm",
+      "deviceRef": 5,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "showEvents": true,
+      "position": {
+        "x": 10,
+        "y": 9,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "vwc_pct-5",
+      "title": "VWC[%]",
+      "metric": "vwc_pct",
+      "deviceRef": 5,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 70,
+      "showEvents": true,
+      "position": {
+        "x": 10,
+        "y": 12,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "air_temp_c-5",
+      "title": "Air Temperature[℃]",
+      "metric": "air_temp_c",
+      "deviceRef": 5,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 45,
+      "showEvents": true,
+      "position": {
+        "x": 10,
+        "y": 15,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "text",
+      "id": "hdr-6",
+      "contentRef": 6,
+      "fontSize": "0.75rem",
+      "align": "center",
+      "position": {
+        "x": 12,
+        "y": 1,
+        "w": 2,
+        "h": 1
+      }
+    },
+    {
+      "type": "gauge",
+      "id": "gauge-6",
+      "title": "Battery voltage[V]",
+      "deviceRef": 6,
+      "metric": "battery_v",
+      "ranges": [
+        2,
+        2.5,
+        3,
+        3.6
+      ],
+      "position": {
+        "x": 12,
+        "y": 2,
+        "w": 2,
+        "h": 2
+      }
+    },
+    {
+      "type": "chart",
+      "id": "battery_v-6",
+      "title": "Battery voltage[V]",
+      "metric": "battery_v",
+      "deviceRef": 6,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "bat"
+      },
+      "groupColors": {
+        "1": "#00cc00"
+      },
+      "yMin": 2,
+      "yMax": 3.6,
+      "showEvents": false,
+      "position": {
+        "x": 12,
+        "y": 4,
+        "w": 2,
+        "h": 2
+      }
+    },
+    {
+      "type": "chart",
+      "id": "temperature_c-6",
+      "title": "Temperature[℃]",
+      "metric": "temperature_c",
+      "deviceRef": 6,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 45,
+      "showEvents": true,
+      "position": {
+        "x": 12,
+        "y": 6,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "ec_bulk_dsm-6",
+      "title": "BulkEC[dS/m]",
+      "metric": "ec_bulk_dsm",
+      "deviceRef": 6,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "showEvents": true,
+      "position": {
+        "x": 12,
+        "y": 9,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "vwc_pct-6",
+      "title": "VWC[%]",
+      "metric": "vwc_pct",
+      "deviceRef": 6,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 70,
+      "showEvents": true,
+      "position": {
+        "x": 12,
+        "y": 12,
+        "w": 2,
+        "h": 3
+      }
+    },
+    {
+      "type": "chart",
+      "id": "air_temp_c-6",
+      "title": "Air Temperature[℃]",
+      "metric": "air_temp_c",
+      "deviceRef": 6,
+      "groupBy": "sensorNumber",
+      "groupLabels": {
+        "1": "1",
+        "2": "2",
+        "3": "3"
+      },
+      "groupColors": {
+        "1": "#0044ff",
+        "2": "#00cc00",
+        "3": "#cccc00"
+      },
+      "yMin": 10,
+      "yMax": 45,
+      "showEvents": true,
+      "position": {
+        "x": 12,
+        "y": 15,
+        "w": 2,
+        "h": 3
+      }
+    }
+  ]
+}
