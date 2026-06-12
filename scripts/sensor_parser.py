@@ -146,4 +146,6 @@ def select_nine_am(published: pd.DataFrame, window=("08:46", "09:14")) -> pd.Dat
     df["_date"] = df["_ts"].dt.strftime("%Y-%m-%d")
     df = df.sort_values(["_distance_to_9am", "_ts"])
     df = df.drop_duplicates(subset=["_date", "siteId", "addr", "number"], keep="first")
+    # Sort by date to ensure chronological order in output
+    df = df.sort_values("_ts")
     return df.drop(columns=["_t", "_ts", "_date", "_distance_to_9am"]).reset_index(drop=True)
