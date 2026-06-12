@@ -373,9 +373,19 @@ function ChartPanel({
                 type: "time",
                 time: {
                   tooltipFormat: "yyyy-MM-dd HH:mm",
-                  displayFormats: { day: "M/d" },
+                  displayFormats: {
+                    minute: "M/d HH:mm",
+                    hour: "M/d HH:mm",
+                    day: "M/d",
+                    week: "M/d",
+                    month: "yyyy/M",
+                  },
                 },
-                ticks: { color: textColor + "aa", maxTicksLimit: 6, font: { size: 9 } },
+                ticks: {
+                  color: textColor + "aa",
+                  maxTicksLimit: 6,
+                  font: { size: 9 },
+                },
                 grid: { color: textColor + "15" },
               },
               y: {

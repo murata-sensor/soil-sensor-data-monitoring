@@ -21,7 +21,7 @@ import type { NormalizedRow } from "../adapters";
 import { ConsentRequiredError, requestConsentToken, signOut } from "../auth/google";
 import {
   type DateRangeType, type DeviceColorMap,
-  type FtpSheetName, type PanelSettings, type UserSettings,
+  type PanelSettings, type UserSettings,
   dateRangeToMs, loadSettings, parseTs, saveSettings,
 } from "../settings";
 import type { LayoutConfig } from "../layoutConfig";
@@ -104,8 +104,6 @@ export default function Dashboard() {
     if (user) setSettingsState(loadSettings(user.email));
   }, [user]);
 
-  const ftpSheetName: FtpSheetName = settings?.ftpSheetName ?? "sensor_raw";
-
   const loadRegistry = async () => {
     if (!user) return;
     setNeedsConsent(false); setError(null);
@@ -139,13 +137,11 @@ export default function Dashboard() {
     const src = allowed.find((s) => s.sourceId === selectedSourceId);
     if (!src) return;
     setLoading(true); setError(null);
-    loadDataSource(src, user.idToken, {
-      sheetNameOverride: src.schemaType === "remote-ftp" ? ftpSheetName : undefined,
-    })
+    loadDataSource(src, user.idToken)
       .then((r) => setRows(r.rows))
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [user, allowed, selectedSourceId, ftpSheetName]);
+  }, [user, allowed, selectedSourceId]);
 
   const selected = useMemo(
     () => allowed.find((s) => s.sourceId === selectedSourceId) || null,
@@ -318,19 +314,6 @@ export default function Dashboard() {
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
-          {selected?.schemaType === "remote-ftp" && (
-            <>
-              <label className="text-slate-600 ml-2">FTPシート：</label>
-              <select
-                value={ftpSheetName}
-                onChange={(e) => updateSettings({ ftpSheetName: e.target.value as FtpSheetName })}
-                className="border rounded px-2 py-1 bg-white"
-              >
-                <option value="sensor_raw">sensor_raw</option>
-                <option value="sensor_9am">sensor_9am</option>
-              </select>
-            </>
-          )}
           {settings?.dateRange.type === "custom" && (
             <>
               <input type="date" className="border rounded px-1 py-0.5 text-xs"
@@ -517,7 +500,17 @@ function Panel({ panel, rows, events, colors, panelSettings, deviceColors, showE
             responsive: true, maintainAspectRatio: false,
             parsing: false, animation: false,
             scales: {
-              x: { type: "time", time: { tooltipFormat: "yyyy-MM-dd HH:mm" } },
+              x: {
+                type: "time",
+                time: {
+                  tooltipFormat: "yyyy-MM-dd HH:mm",
+                  displayFormats: { minute: "HH:mm", hour: "M/d HH:mm", day: "M/d" },
+                },
+                ticks: {
+                  maxTicksLimit: 6,
+                  font: { size: 9 },
+                },
+              },
               y: {
                 min: yMin, max: yMax,
                 title: yLabel ? { display: true, text: yLabel } : undefined,
