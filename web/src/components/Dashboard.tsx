@@ -435,6 +435,7 @@ function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, se
   onLayoutChange: (layout: Layout) => void;
 }) {
   const { width, containerRef } = useContainerWidth();
+  const isMobile = width > 0 && width < 768;
 
   return (
     <div ref={containerRef as React.Ref<HTMLDivElement>}>
@@ -446,8 +447,9 @@ function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, se
           breakpoints={{ lg: 996, md: 768, sm: 480 }}
           cols={{ lg: 12, md: 8, sm: 4 }}
           rowHeight={80}
-          onLayoutChange={onLayoutChange}
-          dragConfig={{ handle: ".panel-drag-handle" }}
+          onLayoutChange={isMobile ? undefined : onLayoutChange}
+          dragConfig={{ handle: ".panel-drag-handle", enabled: !isMobile }}
+          resizeConfig={{ enabled: !isMobile, handles: ["se"] }}
         >
           {panels.map((p) => (
             <div key={p.id}>

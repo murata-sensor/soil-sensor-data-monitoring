@@ -17,4 +17,7 @@ body {
   .react-grid-item {
     touch-action: auto;
   }
+  .panel-drag-handle {
+    cursor: default;
+  }
 }

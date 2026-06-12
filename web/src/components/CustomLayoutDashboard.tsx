@@ -24,6 +24,8 @@ import { resolveDeviceFilter } from "../layoutConfig";
 import { BatteryGauge } from "./BatteryGauge";
 import { parseTs, type PanelSettings, type DeviceColorMap } from "../settings";
 
+const SINGLE_SERIES_METRICS = new Set(["battery_v", "air_temp_c"]);
+
 function getEventLabelYAdjust(): number {
   // Scriptable yAdjust anchored to chart height so label stays near top
   // independent of window size.
@@ -54,7 +56,7 @@ export function CustomLayoutDashboard({
   events,
   panelSettings,
   deviceColors,
-  showEventLabels,
+  showEventLabels = true,
   onLayoutChange,
 }: CustomLayoutProps) {
   const { width, containerRef } = useContainerWidth();
@@ -74,21 +76,48 @@ export function CustomLayoutDashboard({
   }, [layout.panels]);
 
   // Fit all rows into viewport height (minus header ~60px and padding)
+  // On mobile, don't compress rows — allow scrolling instead
   const viewportH = typeof window !== "undefined" ? window.innerHeight - 80 : 800;
-  const rowHeight = Math.max(30, Math.floor(viewportH / Math.max(maxRow, 1)));
+  const isMobile = width > 0 && width < 768;
+  const rowHeight = isMobile
+    ? 60
+    : Math.max(30, Math.floor(viewportH / Math.max(maxRow, 1)));
 
-  const gridLayout = useMemo(() =>
-    layout.panels.map((p) => ({
-      i: p.id,
-      x: p.position.x,
-      y: p.position.y,
-      w: p.position.w,
-      h: p.position.h,
-      minW: 1,
-      minH: 1,
-    })),
-    [layout.panels],
-  );
+  // On mobile, build a stacked layout: charts get full width (2 cols),
+  // text & gauge panels share a row (1 col each)
+  const gridLayout = useMemo(() => {
+    if (!isMobile) {
+      return layout.panels.map((p) => ({
+        i: p.id,
+        x: p.position.x,
+        y: p.position.y,
+        w: p.position.w,
+        h: p.position.h,
+        minW: 1,
+        minH: 1,
+      }));
+    }
+    // Mobile: compact layout
+    let y = 0;
+    const items: { i: string; x: number; y: number; w: number; h: number; minW: number; minH: number }[] = [];
+    // Group: text/gauge get h=1, charts get h=3
+    const smallPanels = layout.panels.filter((p) => p.type === "text" || p.type === "gauge");
+    const largePanels = layout.panels.filter((p) => p.type === "chart" || p.type === "image");
+    // Place small panels 2-per-row
+    for (let i = 0; i < smallPanels.length; i += 2) {
+      items.push({ i: smallPanels[i].id, x: 0, y, w: 1, h: 1, minW: 1, minH: 1 });
+      if (i + 1 < smallPanels.length) {
+        items.push({ i: smallPanels[i + 1].id, x: 1, y, w: 1, h: 1, minW: 1, minH: 1 });
+      }
+      y += 1;
+    }
+    // Place large panels full-width
+    for (const p of largePanels) {
+      items.push({ i: p.id, x: 0, y, w: 2, h: 3, minW: 1, minH: 1 });
+      y += 3;
+    }
+    return items;
+  }, [layout.panels, isMobile]);
 
   const handleLayoutChange = useCallback((newLayout: Layout) => {
     if (!onLayoutChange) return;
@@ -103,7 +132,7 @@ export function CustomLayoutDashboard({
   return (
     <div
       ref={containerRef as React.Ref<HTMLDivElement>}
-      style={{ background: bg, color: textColor, minHeight: "100vh" }}
+      style={{ background: bg, color: textColor, minHeight: isMobile ? "auto" : "100vh" }}
     >
       {width > 0 && (
         <ResponsiveGridLayout
@@ -113,8 +142,9 @@ export function CustomLayoutDashboard({
           breakpoints={{ lg: 996, md: 768, sm: 480 }}
           cols={{ lg: cols, md: Math.max(4, Math.floor(cols / 2)), sm: 2 }}
           rowHeight={rowHeight}
-          onLayoutChange={handleLayoutChange}
-          dragConfig={{ handle: ".panel-drag-handle" }}
+          onLayoutChange={isMobile ? undefined : handleLayoutChange}
+          dragConfig={{ handle: ".panel-drag-handle", enabled: !isMobile }}
+          resizeConfig={{ enabled: !isMobile, handles: ["se"] }}
           margin={[4, 4]}
         >
           {layout.panels.map((panel) => (
@@ -127,9 +157,9 @@ export function CustomLayoutDashboard({
                 textColor={textColor}
                 panelSettings={panelSettings?.[panel.id]}
                 deviceColors={deviceColors ?? {}}
-                showEventLabels={showEventLabels ?? true}
                 devices={layout.devices}
                 deviceLabels={layout.deviceLabels ?? layout.devices}
+                showEventLabels={showEventLabels}
               />
             </div>
           ))}
@@ -149,9 +179,9 @@ function PanelRenderer({
   textColor,
   panelSettings,
   deviceColors,
-  showEventLabels,
   devices,
   deviceLabels,
+  showEventLabels,
 }: {
   panel: LayoutPanel;
   rows: NormalizedRow[];
@@ -160,9 +190,9 @@ function PanelRenderer({
   textColor: string;
   panelSettings?: PanelSettings;
   deviceColors: DeviceColorMap;
-  showEventLabels: boolean;
   devices?: string[];
   deviceLabels?: string[];
+  showEventLabels: boolean;
 }) {
   switch (panel.type) {
     case "text":
@@ -181,8 +211,8 @@ function PanelRenderer({
           textColor={textColor}
           panelSettings={panelSettings}
           deviceColors={deviceColors}
-          showEventLabels={showEventLabels}
           devices={devices}
+          showEventLabels={showEventLabels}
         />
       );
   }
@@ -249,18 +279,23 @@ function GaugePanel({
   const df = resolveDeviceFilter(panel, devices);
 
   // Get the latest value for the filtered device(s)
+  // Deduplicate by timestamp (take first occurrence per ts) so the gauge
+  // value matches the chart's single-series rendering.
   const latestValue = useMemo(() => {
     const filtered = rows.filter((r) => {
       if (!df?.length) return true;
       return df.includes(r.deviceId ?? "");
     });
-    // Find latest row that has the metric
+    const seenTs = new Set<number>();
     let latest: NormalizedRow | null = null;
     let latestTs = 0;
     for (const r of filtered) {
       const v = (r as Record<string, unknown>)[metric];
       if (typeof v !== "number" || !r.ts) continue;
       const ts = parseTs(r.ts);
+      if (!Number.isFinite(ts)) continue;
+      if (seenTs.has(ts)) continue; // skip duplicate timestamps
+      seenTs.add(ts);
       if (ts > latestTs) { latestTs = ts; latest = r; }
     }
     return latest ? (latest as Record<string, unknown>)[metric] as number : null;
@@ -290,8 +325,8 @@ function ChartPanel({
   textColor,
   panelSettings,
   deviceColors,
-  showEventLabels,
   devices,
+  showEventLabels,
 }: {
   panel: ChartPanelConfig;
   rows: NormalizedRow[];
@@ -300,8 +335,8 @@ function ChartPanel({
   textColor: string;
   panelSettings?: PanelSettings;
   deviceColors: DeviceColorMap;
-  showEventLabels: boolean;
   devices?: string[];
+  showEventLabels: boolean;
 }) {
   const resolved = useMemo(
     () => ({ ...panel, deviceFilter: resolveDeviceFilter(panel, devices) }),
@@ -350,9 +385,10 @@ function ChartPanel({
     );
   }, [events, panel.showEvents, panel.metric, resolved.deviceFilter, showEventLabels]);
 
-  const yMin = panelSettings?.yMin ?? panel.yMin;
-  const yMax = panelSettings?.yMax ?? panel.yMax;
+  const yMin = panelSettings?.yMin ?? (panel.metric === "battery_v" ? 3.0 : panel.yMin);
+  const yMax = panelSettings?.yMax ?? (panel.metric === "battery_v" ? 3.6 : panel.yMax);
   const yLabel = panelSettings?.yLabel ?? panel.yLabel;
+  const hideLegend = SINGLE_SERIES_METRICS.has(panel.metric) || datasets.length <= 1;
 
   return (
     <div
@@ -398,7 +434,7 @@ function ChartPanel({
             },
             plugins: {
               legend: {
-                display: true,
+                display: !hideLegend,
                 position: "top" as const,
                 labels: { color: textColor + "cc", boxWidth: 12, font: { size: 9 } },
               },
@@ -438,8 +474,15 @@ function buildChartDatasets(
   }
 
   const groupBy = panel.groupBy ?? "deviceId";
+  const singleSeries = SINGLE_SERIES_METRICS.has(panel.metric);
   const groups = new Map<string, { color: string; label: string; data: { x: number; y: number }[] }>();
   let colorIdx = 0;
+  const fallbackSingleColor = panel.groupColors
+    ? Object.values(panel.groupColors)[0]
+    : undefined;
+  // For single-series metrics, deduplicate by timestamp so duplicate sensor
+  // readings at the same moment don't zigzag the line.
+  const singleSeriesSeenTs = singleSeries ? new Map<string, Set<number>>() : null;
 
   for (const r of filtered) {
     const v = (r as Record<string, unknown>)[panel.metric];
@@ -447,14 +490,25 @@ function buildChartDatasets(
     const x = parseTs(r.ts);
     if (!Number.isFinite(x)) continue;
 
-    const key = groupBy === "sensorNumber"
+    const key = singleSeries
+      ? panel.id
+      : groupBy === "sensorNumber"
       ? (r.sensorNumber ?? "(no sensor)")
       : (r.deviceId ?? "(default)");
+
+    if (singleSeriesSeenTs) {
+      if (!singleSeriesSeenTs.has(key)) singleSeriesSeenTs.set(key, new Set());
+      const tsSet = singleSeriesSeenTs.get(key)!;
+      if (tsSet.has(x)) continue; // duplicate timestamp — skip
+      tsSet.add(x);
+    }
 
     if (!groups.has(key)) {
       // Determine color: groupColors > deviceColors > default palette
       let color: string;
-      if (panel.groupColors?.[key]) {
+      if (singleSeries && fallbackSingleColor) {
+        color = fallbackSingleColor;
+      } else if (panel.groupColors?.[key]) {
         color = panel.groupColors[key];
       } else if (deviceColors[key]) {
         color = deviceColors[key];
@@ -462,7 +516,7 @@ function buildChartDatasets(
         color = DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length];
       }
       // Determine label
-      const label = panel.groupLabels?.[key] ?? key;
+      const label = singleSeries ? panel.title : (panel.groupLabels?.[key] ?? key);
       groups.set(key, { color, label, data: [] });
       colorIdx++;
     }
