@@ -112,6 +112,36 @@ export async function requestConsentToken(): Promise<string> {
   return requestToken("consent");
 }
 
+/** Clear local session and revoke OAuth token when available. */
+export function signOut(): void {
+  const googleAny = window.google as unknown as {
+    accounts?: {
+      id?: { disableAutoSelect?: () => void };
+      oauth2?: { revoke?: (token: string) => void };
+    };
+  };
+  const tokenToRevoke = accessToken;
+  accessToken = null;
+  accessTokenExpiry = 0;
+  sessionStorage.removeItem(STORAGE_KEY_USER);
+  sessionStorage.removeItem(STORAGE_KEY_TOKEN);
+  sessionStorage.removeItem(STORAGE_KEY_EXPIRY);
+
+  try {
+    googleAny.accounts?.id?.disableAutoSelect?.();
+  } catch {
+    // Ignore GIS runtime errors during sign-out.
+  }
+
+  if (tokenToRevoke) {
+    try {
+      googleAny.accounts?.oauth2?.revoke?.(tokenToRevoke);
+    } catch {
+      // Ignore revoke errors; local session is already cleared.
+    }
+  }
+}
+
 function requestToken(prompt: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const client = window.google!.accounts.oauth2.initTokenClient({

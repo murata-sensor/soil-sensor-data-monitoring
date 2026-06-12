@@ -38,7 +38,7 @@ export function createSiteLayout(
       "3": "#cccc00",
     },
     metrics: [
-      { metric: "battery_v", title: "Battery voltage[V]", yMin: 2.0, yMax: 3.6 },
+      { metric: "battery_v", title: "Battery voltage[V]", yMin: 3.0, yMax: 3.6 },
       { metric: "temperature_c", title: "Temperature[℃]", yMin: 10, yMax: 45 },
       { metric: "ec_bulk_dsm", title: "BulkEC[dS/m]" },
       { metric: "vwc_pct", title: "VWC[%]", yMin: 10, yMax: 70 },
@@ -68,7 +68,7 @@ export const EXAMPLE_LAYOUT_JSON: LayoutConfig = generateDeviceColumnLayout(
       "3": "#cccc00",
     },
     metrics: [
-      { metric: "battery_v", title: "Battery voltage[V]", yMin: 2.0, yMax: 3.6 },
+      { metric: "battery_v", title: "Battery voltage[V]", yMin: 3.0, yMax: 3.6 },
       { metric: "temperature_c", title: "Temperature[℃]", yMin: 10, yMax: 45 },
       { metric: "ec_bulk_dsm", title: "BulkEC[dS/m]" },
       { metric: "vwc_pct", title: "VWC[%]", yMin: 10, yMax: 70 },

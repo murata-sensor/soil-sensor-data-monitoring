@@ -24,6 +24,30 @@ import { resolveDeviceFilter } from "../layoutConfig";
 import { BatteryGauge } from "./BatteryGauge";
 import { parseTs, type PanelSettings, type DeviceColorMap } from "../settings";
 
+const SINGLE_SERIES_METRICS = new Set(["battery_v", "air_temp_c"]);
+
+function getEventLabelYAdjust(): number {
+  // Scriptable yAdjust anchored to chart height so label stays near top
+  // independent of window size.
+  const scriptable = (ctx: { chart?: { chartArea?: { top: number; bottom: number } } }) => {
+    const area = ctx?.chart?.chartArea;
+    if (!area) return -8;
+    const height = Math.max(0, area.bottom - area.top);
+    return -Math.max(8, Math.floor(height / 2) - 6);
+  };
+  return scriptable as unknown as number;
+}
+
+function formatTimeTick(value: string | number): string | string[] {
+  const ts = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(ts)) return String(value);
+  const date = new Date(ts);
+  const monthDay = `${date.getMonth() + 1}/${date.getDate()}`;
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return [monthDay, `${hours}:${minutes}`];
+}
+
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 interface CustomLayoutProps {
@@ -231,18 +255,23 @@ function GaugePanel({
   const df = resolveDeviceFilter(panel, devices);
 
   // Get the latest value for the filtered device(s)
+  // Deduplicate by timestamp (take first occurrence per ts) so the gauge
+  // value matches the chart's single-series rendering.
   const latestValue = useMemo(() => {
     const filtered = rows.filter((r) => {
       if (!df?.length) return true;
       return df.includes(r.deviceId ?? "");
     });
-    // Find latest row that has the metric
+    const seenTs = new Set<number>();
     let latest: NormalizedRow | null = null;
     let latestTs = 0;
     for (const r of filtered) {
       const v = (r as Record<string, unknown>)[metric];
       if (typeof v !== "number" || !r.ts) continue;
       const ts = parseTs(r.ts);
+      if (!Number.isFinite(ts)) continue;
+      if (seenTs.has(ts)) continue; // skip duplicate timestamps
+      seenTs.add(ts);
       if (ts > latestTs) { latestTs = ts; latest = r; }
     }
     return latest ? (latest as Record<string, unknown>)[metric] as number : null;
@@ -294,9 +323,14 @@ function ChartPanel({
   );
 
   const annotations = useMemo(() => {
-    if (panel.showEvents === false) return {};
+    if (panel.showEvents === false || panel.metric === "air_temp_c") return {};
+    const deviceFilter = resolved.deviceFilter;
+    // Show event if: no deviceId (global) OR deviceId matches this panel's device filter
+    const visibleEvents = events.filter((e) =>
+      !e.deviceId || !deviceFilter?.length || deviceFilter.includes(e.deviceId),
+    );
     return Object.fromEntries(
-      events.map((e, i) => {
+      visibleEvents.map((e, i) => {
         // Support both date-only ("2025-07-15") and datetime ("2025-07-15T10:30+09:00")
         const ts = parseTs(e.date);
         return [
@@ -312,19 +346,23 @@ function ChartPanel({
               content: e.label,
               display: true,
               position: "start" as const,
-              backgroundColor: "rgba(0,0,0,0.7)",
+              xAdjust: 6,
+              yAdjust: getEventLabelYAdjust(),
+              backgroundColor: "rgba(0,0,0,0.72)",
               color: "#fff",
               font: { size: 9 },
+              padding: 2,
             },
           },
         ];
       }),
     );
-  }, [events, panel.showEvents]);
+  }, [events, panel.showEvents, panel.metric, resolved.deviceFilter]);
 
-  const yMin = panelSettings?.yMin ?? panel.yMin;
-  const yMax = panelSettings?.yMax ?? panel.yMax;
+  const yMin = panelSettings?.yMin ?? (panel.metric === "battery_v" ? 3.0 : panel.yMin);
+  const yMax = panelSettings?.yMax ?? (panel.metric === "battery_v" ? 3.6 : panel.yMax);
   const yLabel = panelSettings?.yLabel ?? panel.yLabel;
+  const hideLegend = SINGLE_SERIES_METRICS.has(panel.metric) || datasets.length <= 1;
 
   return (
     <div
@@ -347,7 +385,12 @@ function ChartPanel({
                   tooltipFormat: "yyyy-MM-dd HH:mm",
                   displayFormats: { day: "M/d" },
                 },
-                ticks: { color: textColor + "aa", maxTicksLimit: 6, font: { size: 9 } },
+                ticks: {
+                  color: textColor + "aa",
+                  maxTicksLimit: 6,
+                  font: { size: 9 },
+                  callback: (value) => formatTimeTick(value),
+                },
                 grid: { color: textColor + "15" },
               },
               y: {
@@ -360,7 +403,7 @@ function ChartPanel({
             },
             plugins: {
               legend: {
-                display: true,
+                display: !hideLegend,
                 position: "top" as const,
                 labels: { color: textColor + "cc", boxWidth: 12, font: { size: 9 } },
               },
@@ -400,8 +443,15 @@ function buildChartDatasets(
   }
 
   const groupBy = panel.groupBy ?? "deviceId";
+  const singleSeries = SINGLE_SERIES_METRICS.has(panel.metric);
   const groups = new Map<string, { color: string; label: string; data: { x: number; y: number }[] }>();
   let colorIdx = 0;
+  const fallbackSingleColor = panel.groupColors
+    ? Object.values(panel.groupColors)[0]
+    : undefined;
+  // For single-series metrics, deduplicate by timestamp so duplicate sensor
+  // readings at the same moment don't zigzag the line.
+  const singleSeriesSeenTs = singleSeries ? new Map<string, Set<number>>() : null;
 
   for (const r of filtered) {
     const v = (r as Record<string, unknown>)[panel.metric];
@@ -409,14 +459,25 @@ function buildChartDatasets(
     const x = parseTs(r.ts);
     if (!Number.isFinite(x)) continue;
 
-    const key = groupBy === "sensorNumber"
+    const key = singleSeries
+      ? panel.id
+      : groupBy === "sensorNumber"
       ? (r.sensorNumber ?? "(no sensor)")
       : (r.deviceId ?? "(default)");
+
+    if (singleSeriesSeenTs) {
+      if (!singleSeriesSeenTs.has(key)) singleSeriesSeenTs.set(key, new Set());
+      const tsSet = singleSeriesSeenTs.get(key)!;
+      if (tsSet.has(x)) continue; // duplicate timestamp — skip
+      tsSet.add(x);
+    }
 
     if (!groups.has(key)) {
       // Determine color: groupColors > deviceColors > default palette
       let color: string;
-      if (panel.groupColors?.[key]) {
+      if (singleSeries && fallbackSingleColor) {
+        color = fallbackSingleColor;
+      } else if (panel.groupColors?.[key]) {
         color = panel.groupColors[key];
       } else if (deviceColors[key]) {
         color = deviceColors[key];
@@ -424,7 +485,7 @@ function buildChartDatasets(
         color = DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length];
       }
       // Determine label
-      const label = panel.groupLabels?.[key] ?? key;
+      const label = singleSeries ? panel.title : (panel.groupLabels?.[key] ?? key);
       groups.set(key, { color, label, data: [] });
       colorIdx++;
     }

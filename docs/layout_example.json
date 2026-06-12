@@ -76,14 +76,7 @@
       "title": "Battery voltage[V]",
       "metric": "battery_v",
       "deviceRef": 0,
-      "groupBy": "sensorNumber",
-      "groupLabels": {
-        "1": "bat"
-      },
-      "groupColors": {
-        "1": "#00cc00"
-      },
-      "yMin": 2,
+      "yMin": 3.0,
       "yMax": 3.6,
       "showEvents": false,
       "position": {
@@ -178,17 +171,6 @@
       "title": "Air Temperature[℃]",
       "metric": "air_temp_c",
       "deviceRef": 0,
-      "groupBy": "sensorNumber",
-      "groupLabels": {
-        "1": "1",
-        "2": "2",
-        "3": "3"
-      },
-      "groupColors": {
-        "1": "#0044ff",
-        "2": "#00cc00",
-        "3": "#cccc00"
-      },
       "yMin": 10,
       "yMax": 45,
       "showEvents": true,
@@ -237,14 +219,7 @@
       "title": "Battery voltage[V]",
       "metric": "battery_v",
       "deviceRef": 1,
-      "groupBy": "sensorNumber",
-      "groupLabels": {
-        "1": "bat"
-      },
-      "groupColors": {
-        "1": "#00cc00"
-      },
-      "yMin": 2,
+      "yMin": 3.0,
       "yMax": 3.6,
       "showEvents": false,
       "position": {
@@ -339,17 +314,6 @@
       "title": "Air Temperature[℃]",
       "metric": "air_temp_c",
       "deviceRef": 1,
-      "groupBy": "sensorNumber",
-      "groupLabels": {
-        "1": "1",
-        "2": "2",
-        "3": "3"
-      },
-      "groupColors": {
-        "1": "#0044ff",
-        "2": "#00cc00",
-        "3": "#cccc00"
-      },
       "yMin": 10,
       "yMax": 45,
       "showEvents": true,
@@ -398,14 +362,7 @@
       "title": "Battery voltage[V]",
       "metric": "battery_v",
       "deviceRef": 2,
-      "groupBy": "sensorNumber",
-      "groupLabels": {
-        "1": "bat"
-      },
-      "groupColors": {
-        "1": "#00cc00"
-      },
-      "yMin": 2,
+      "yMin": 3.0,
       "yMax": 3.6,
       "showEvents": false,
       "position": {
@@ -500,17 +457,6 @@
       "title": "Air Temperature[℃]",
       "metric": "air_temp_c",
       "deviceRef": 2,
-      "groupBy": "sensorNumber",
-      "groupLabels": {
-        "1": "1",
-        "2": "2",
-        "3": "3"
-      },
-      "groupColors": {
-        "1": "#0044ff",
-        "2": "#00cc00",
-        "3": "#cccc00"
-      },
       "yMin": 10,
       "yMax": 45,
       "showEvents": true,
@@ -559,14 +505,7 @@
       "title": "Battery voltage[V]",
       "metric": "battery_v",
       "deviceRef": 3,
-      "groupBy": "sensorNumber",
-      "groupLabels": {
-        "1": "bat"
-      },
-      "groupColors": {
-        "1": "#00cc00"
-      },
-      "yMin": 2,
+      "yMin": 3.0,
       "yMax": 3.6,
       "showEvents": false,
       "position": {
@@ -661,17 +600,6 @@
       "title": "Air Temperature[℃]",
       "metric": "air_temp_c",
       "deviceRef": 3,
-      "groupBy": "sensorNumber",
-      "groupLabels": {
-        "1": "1",
-        "2": "2",
-        "3": "3"
-      },
-      "groupColors": {
-        "1": "#0044ff",
-        "2": "#00cc00",
-        "3": "#cccc00"
-      },
       "yMin": 10,
       "yMax": 45,
       "showEvents": true,
@@ -720,14 +648,7 @@
       "title": "Battery voltage[V]",
       "metric": "battery_v",
       "deviceRef": 4,
-      "groupBy": "sensorNumber",
-      "groupLabels": {
-        "1": "bat"
-      },
-      "groupColors": {
-        "1": "#00cc00"
-      },
-      "yMin": 2,
+      "yMin": 3.0,
       "yMax": 3.6,
       "showEvents": false,
       "position": {
@@ -822,17 +743,6 @@
       "title": "Air Temperature[℃]",
       "metric": "air_temp_c",
       "deviceRef": 4,
-      "groupBy": "sensorNumber",
-      "groupLabels": {
-        "1": "1",
-        "2": "2",
-        "3": "3"
-      },
-      "groupColors": {
-        "1": "#0044ff",
-        "2": "#00cc00",
-        "3": "#cccc00"
-      },
       "yMin": 10,
       "yMax": 45,
       "showEvents": true,
@@ -881,14 +791,7 @@
       "title": "Battery voltage[V]",
       "metric": "battery_v",
       "deviceRef": 5,
-      "groupBy": "sensorNumber",
-      "groupLabels": {
-        "1": "bat"
-      },
-      "groupColors": {
-        "1": "#00cc00"
-      },
-      "yMin": 2,
+      "yMin": 3.0,
       "yMax": 3.6,
       "showEvents": false,
       "position": {
@@ -983,17 +886,6 @@
       "title": "Air Temperature[℃]",
       "metric": "air_temp_c",
       "deviceRef": 5,
-      "groupBy": "sensorNumber",
-      "groupLabels": {
-        "1": "1",
-        "2": "2",
-        "3": "3"
-      },
-      "groupColors": {
-        "1": "#0044ff",
-        "2": "#00cc00",
-        "3": "#cccc00"
-      },
       "yMin": 10,
       "yMax": 45,
       "showEvents": true,
@@ -1042,14 +934,7 @@
       "title": "Battery voltage[V]",
       "metric": "battery_v",
       "deviceRef": 6,
-      "groupBy": "sensorNumber",
-      "groupLabels": {
-        "1": "bat"
-      },
-      "groupColors": {
-        "1": "#00cc00"
-      },
-      "yMin": 2,
+      "yMin": 3.0,
       "yMax": 3.6,
       "showEvents": false,
       "position": {
@@ -1144,17 +1029,6 @@
       "title": "Air Temperature[℃]",
       "metric": "air_temp_c",
       "deviceRef": 6,
-      "groupBy": "sensorNumber",
-      "groupLabels": {
-        "1": "1",
-        "2": "2",
-        "3": "3"
-      },
-      "groupColors": {
-        "1": "#0044ff",
-        "2": "#00cc00",
-        "3": "#cccc00"
-      },
       "yMin": 10,
       "yMax": 45,
       "showEvents": true,

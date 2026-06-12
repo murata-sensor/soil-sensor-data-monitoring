@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import { useApp } from "../store";
 import { adminGetSheet, adminPutRows, adminSaveTheme } from "../api/admin";
 import type { Theme } from "../types";
+import { signOut } from "../auth/google";
 
 const SHEETS = ["sources", "users", "acl", "events"] as const;
 type Sheet = typeof SHEETS[number];
 
 export default function AdminPanel() {
-  const { user, theme, setTheme } = useApp();
+  const { user, theme, setTheme, setUser } = useApp();
   const [sheet, setSheet] = useState<Sheet>("sources");
   const [rows, setRows] = useState<string[][]>([]);
   const [status, setStatus] = useState<string>("");
@@ -51,7 +52,18 @@ export default function AdminPanel() {
     <div className="min-h-screen p-6 bg-slate-50">
       <header className="flex justify-between mb-4">
         <h1 className="text-lg font-semibold">管理画面 (Registry)</h1>
-        <a href="./" className="text-sky-700 underline">← ダッシュボード</a>
+        <div className="flex items-center gap-3">
+          <a href="./" className="text-sky-700 underline">← ダッシュボード</a>
+          <button
+            onClick={() => {
+              signOut();
+              setUser(null);
+            }}
+            className="px-3 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+          >
+            ログアウト
+          </button>
+        </div>
       </header>
 
       <nav className="mb-4 flex gap-2">

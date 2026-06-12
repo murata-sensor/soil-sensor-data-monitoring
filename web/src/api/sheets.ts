@@ -96,8 +96,11 @@ export async function loadAcl(): Promise<AclRow[]> {
 export async function loadEvents(): Promise<EventRow[]> {
   const raw = toObjects<Record<string, string>>(await readRegistry("events!A1:Z"));
   return raw.map((r) => ({
-    date: r.date, sourceId: r.sourceId, label: r.label,
+    date: r.date,
+    sourceId: r.sourceId,
+    label: r.label,
     color: r.color || undefined,
+    deviceId: r.deviceId ? r.deviceId.trim() : undefined,
   })).filter((e) => e.date && e.sourceId);
 }
 
