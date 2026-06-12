@@ -98,6 +98,7 @@ export async function loadEvents(): Promise<EventRow[]> {
   return raw.map((r) => ({
     date: r.date, sourceId: r.sourceId, label: r.label,
     color: r.color || undefined,
+    deviceId: r.deviceId || undefined,
   })).filter((e) => e.date && e.sourceId);
 }
 
@@ -137,17 +138,26 @@ export interface DataSourceResult {
   rows: NormalizedRow[];
 }
 
-async function readDirect(src: SourceRow): Promise<string[][]> {
+async function readDirect(src: SourceRow, sheetNameOverride?: string): Promise<string[][]> {
   // Read from headerRow downwards so the adapter receives the header as row 0.
-  const range = `${src.sheetName}!A${src.headerRow}:ZZ`;
+  const sheetName = (sheetNameOverride || src.sheetName).trim();
+  const range = `${sheetName}!A${src.headerRow}:ZZ`;
   return sheetsGet(src.spreadsheetId, range);
 }
 
-async function readProxy(src: SourceRow, idToken: string): Promise<string[][]> {
+async function readProxy(
+  src: SourceRow,
+  idToken: string,
+  sheetNameOverride?: string,
+): Promise<string[][]> {
   if (!PROXY_URL) throw new Error("VITE_GAS_PROXY_URL is not set for proxy access");
   const res = await fetch(PROXY_URL, {
     method: "POST",
-    body: JSON.stringify({ idToken, sourceId: src.sourceId }),
+    body: JSON.stringify({
+      idToken,
+      sourceId: src.sourceId,
+      sheetName: sheetNameOverride || undefined,
+    }),
   });
   if (!res.ok) throw new Error(`proxy ${res.status}`);
   const json = (await res.json()) as { ok: boolean; error?: string; values?: string[][] };
@@ -158,10 +168,11 @@ async function readProxy(src: SourceRow, idToken: string): Promise<string[][]> {
 export async function loadDataSource(
   source: SourceRow,
   idToken?: string,
+  options?: { sheetNameOverride?: string },
 ): Promise<DataSourceResult> {
   const values = source.accessMode === "proxy"
-    ? await readProxy(source, idToken || "")
-    : await readDirect(source);
+    ? await readProxy(source, idToken || "", options?.sheetNameOverride)
+    : await readDirect(source, options?.sheetNameOverride);
   return { source, rows: toNormalized(source.schemaType, values) };
 }
 

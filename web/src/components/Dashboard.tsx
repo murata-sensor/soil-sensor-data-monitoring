@@ -21,7 +21,7 @@ import type { NormalizedRow } from "../adapters";
 import { ConsentRequiredError, requestConsentToken, signOut } from "../auth/google";
 import {
   type DateRangeType, type DeviceColorMap,
-  type PanelSettings, type UserSettings,
+  type FtpSheetName, type PanelSettings, type UserSettings,
   dateRangeToMs, loadSettings, parseTs, saveSettings,
 } from "../settings";
 import type { LayoutConfig } from "../layoutConfig";
@@ -104,6 +104,8 @@ export default function Dashboard() {
     if (user) setSettingsState(loadSettings(user.email));
   }, [user]);
 
+  const ftpSheetName: FtpSheetName = settings?.ftpSheetName ?? "sensor_raw";
+
   const loadRegistry = async () => {
     if (!user) return;
     setNeedsConsent(false); setError(null);
@@ -137,11 +139,13 @@ export default function Dashboard() {
     const src = allowed.find((s) => s.sourceId === selectedSourceId);
     if (!src) return;
     setLoading(true); setError(null);
-    loadDataSource(src, user.idToken)
+    loadDataSource(src, user.idToken, {
+      sheetNameOverride: src.schemaType === "remote-ftp" ? ftpSheetName : undefined,
+    })
       .then((r) => setRows(r.rows))
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [user, allowed, selectedSourceId]);
+  }, [user, allowed, selectedSourceId, ftpSheetName]);
 
   const selected = useMemo(
     () => allowed.find((s) => s.sourceId === selectedSourceId) || null,
@@ -314,6 +318,19 @@ export default function Dashboard() {
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
+          {selected?.schemaType === "remote-ftp" && (
+            <>
+              <label className="text-slate-600 ml-2">FTPシート：</label>
+              <select
+                value={ftpSheetName}
+                onChange={(e) => updateSettings({ ftpSheetName: e.target.value as FtpSheetName })}
+                className="border rounded px-2 py-1 bg-white"
+              >
+                <option value="sensor_raw">sensor_raw</option>
+                <option value="sensor_9am">sensor_9am</option>
+              </select>
+            </>
+          )}
           {settings?.dateRange.type === "custom" && (
             <>
               <input type="date" className="border rounded px-1 py-0.5 text-xs"

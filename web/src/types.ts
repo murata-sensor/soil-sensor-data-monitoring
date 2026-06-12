@@ -35,6 +35,7 @@ export interface EventRow {
   sourceId: string;
   label: string;
   color?: string;
+  deviceId?: string;
 }
 
 export type Metric =

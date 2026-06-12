@@ -29,11 +29,14 @@ export interface DeviceColorMap {
   [deviceId: string]: string;
 }
 
+export type FtpSheetName = "sensor_raw" | "sensor_9am";
+
 export interface UserSettings {
   dateRange: DateRange;
   panelSettings: Record<string, PanelSettings>; // keyed by panel id
   layout: LayoutItem[] | null; // null = use default
   deviceColors: DeviceColorMap;
+  ftpSheetName: FtpSheetName;
   showAirTemperature: boolean;
   showEventLabels: boolean;
 }
@@ -43,6 +46,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   panelSettings: {},
   layout: null,
   deviceColors: {},
+  ftpSheetName: "sensor_raw",
   showAirTemperature: false,
   showEventLabels: true,
 };
