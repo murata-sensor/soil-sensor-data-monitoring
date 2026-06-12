@@ -8,6 +8,7 @@
 export interface NormalizedRow {
   ts?: string;                    // ISO-8601 with offset (Asia/Tokyo)
   deviceId?: string;
+  sensorNumber?: string;          // sub-sensor index within a device (e.g. "1","2","3")
   temperature_c?: number;
   vwc_pct?: number;
   vwc_coco_pct?: number;
@@ -25,7 +26,7 @@ export interface NormalizedRow {
 }
 
 export type NormalizedField = keyof NormalizedRow;
-export type NumericField = Exclude<NormalizedField, "ts" | "deviceId">;
+export type NumericField = Exclude<NormalizedField, "ts" | "deviceId" | "sensorNumber">;
 
 export const NUMERIC_FIELDS: readonly NumericField[] = [
   "temperature_c", "vwc_pct", "vwc_coco_pct", "vwc_rock_pct",

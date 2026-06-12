@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass
 class NormalizedRow:
     ts: str | None = None              # ISO-8601 with offset (Asia/Tokyo)
     device_id: str | None = None
+    sensor_number: str | None = None   # sub-sensor index within a device
     temperature_c: float | None = None
     vwc_pct: float | None = None
     vwc_coco_pct: float | None = None

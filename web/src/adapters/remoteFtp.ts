@@ -6,6 +6,7 @@ export const KEY = "remote-ftp" as const;
 export const HEADER_MAP: Record<string, keyof NormalizedRow> = {
   "date": "ts",
   "addr": "deviceId",
+  "number": "sensorNumber",
   "battery1": "battery_v",
   "battery1[V]": "battery_v",
   "bulk_ec": "ec_bulk_dsm",
@@ -13,9 +14,18 @@ export const HEADER_MAP: Record<string, keyof NormalizedRow> = {
   "vwc": "vwc_pct",
   "vwc[%]": "vwc_pct",
   "soil_temp": "temperature_c",
+  "soil_temp[℃]": "temperature_c",
+  "air_temp": "air_temp_c",
+  "air_tmp": "air_temp_c",
+  "air_tmp[℃]": "air_temp_c",
+  "air_temp[℃]": "air_temp_c",
+  "precip_1h": "precip_1h_mm",
+  "precip_1h[mm]": "precip_1h_mm",
+  "sunshine_1h": "sunshine_1h_h",
+  "sunshine_1h[h]": "sunshine_1h_h",
 };
 
-const STRING_FIELDS = new Set<keyof NormalizedRow>(["ts", "deviceId"]);
+const STRING_FIELDS = new Set<keyof NormalizedRow>(["ts", "deviceId", "sensorNumber"]);
 
 export function toNormalized(values: string[][]): NormalizedRow[] {
   if (!values.length) return [];
