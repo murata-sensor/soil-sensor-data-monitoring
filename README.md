@@ -54,4 +54,4 @@ pytest
 
 ## ライセンス
 
-未指定（Internal use only — 検討中）。
+本リポジトリは [MIT License](./LICENSE) の下で公開しています。
