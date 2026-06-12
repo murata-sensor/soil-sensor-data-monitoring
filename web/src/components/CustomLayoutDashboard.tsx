@@ -24,6 +24,18 @@ import { resolveDeviceFilter } from "../layoutConfig";
 import { BatteryGauge } from "./BatteryGauge";
 import { parseTs, type PanelSettings, type DeviceColorMap } from "../settings";
 
+function getEventLabelYAdjust(): number {
+  // Scriptable yAdjust anchored to chart height so label stays near top
+  // independent of window size.
+  const scriptable = (ctx: { chart?: { chartArea?: { top: number; bottom: number } } }) => {
+    const area = ctx?.chart?.chartArea;
+    if (!area) return -8;
+    const height = Math.max(0, area.bottom - area.top);
+    return -Math.max(8, Math.floor(height / 2) - 6);
+  };
+  return scriptable as unknown as number;
+}
+
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 interface CustomLayoutProps {
@@ -302,9 +314,14 @@ function ChartPanel({
   );
 
   const annotations = useMemo(() => {
-    if (panel.showEvents === false) return {};
+    if (panel.showEvents === false || panel.metric === "air_temp_c") return {};
+    const deviceFilter = resolved.deviceFilter;
+    // Show event if: no deviceId (global) OR deviceId matches this panel's device filter
+    const visibleEvents = events.filter((e) =>
+      !e.deviceId || !deviceFilter?.length || deviceFilter.includes(e.deviceId),
+    );
     return Object.fromEntries(
-      events.map((e, i) => {
+      visibleEvents.map((e, i) => {
         // Support both date-only ("2025-07-15") and datetime ("2025-07-15T10:30+09:00")
         const ts = parseTs(e.date);
         return [
@@ -320,15 +337,18 @@ function ChartPanel({
               content: e.label,
               display: showEventLabels,
               position: "start" as const,
-              backgroundColor: "rgba(0,0,0,0.7)",
+              xAdjust: 6,
+              yAdjust: getEventLabelYAdjust(),
+              backgroundColor: "rgba(0,0,0,0.72)",
               color: "#fff",
               font: { size: 9 },
+              padding: 2,
             },
           },
         ];
       }),
     );
-  }, [events, panel.showEvents, showEventLabels]);
+  }, [events, panel.showEvents, panel.metric, resolved.deviceFilter, showEventLabels]);
 
   const yMin = panelSettings?.yMin ?? panel.yMin;
   const yMax = panelSettings?.yMax ?? panel.yMax;
