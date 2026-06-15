@@ -301,6 +301,12 @@ function GaugePanel({
     return latest ? (latest as Record<string, unknown>)[metric] as number : null;
   }, [rows, df, metric]);
 
+  const deviceLabel = panel.deviceRef !== undefined && devices?.[panel.deviceRef]
+    ? ` [${devices[panel.deviceRef]}]`
+    : df?.length === 1
+      ? ` [${df[0]}]`
+      : "";
+
   return (
     <div
       className="h-full rounded-lg p-1 flex flex-col panel-drag-handle cursor-move"
@@ -309,7 +315,7 @@ function GaugePanel({
       <BatteryGauge
         value={latestValue}
         ranges={ranges}
-        title={panel.title}
+        title={panel.title + deviceLabel}
       />
     </div>
   );

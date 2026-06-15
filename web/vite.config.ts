@@ -7,6 +7,9 @@ export default defineConfig(() => {
   return {
     plugins: [react()],
     base,
+    define: {
+      "process.env.DRAGGABLE_DEBUG": "undefined",
+    },
     test: {
       environment: "jsdom",
       globals: true,
