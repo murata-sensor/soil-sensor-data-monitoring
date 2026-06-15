@@ -2,90 +2,60 @@
 
 ## 概要
 
-FTPインジェストプロセスで現地圃場の気象情報（気温、降雨量など）を自動的に取得して、センサーデータと一緒に保存できます。
+本プロジェクトでは 2 つの気象データ取得経路があります:
 
-## 機能
+| 経路 | 対象 schemaType | データソース | 実装 |
+| --- | --- | --- | --- |
+| **Open-Meteo** | `remote-ftp` | [Open-Meteo Archive API](https://archive-api.open-meteo.com/) (無料・APIキー不要) | `scripts/ingest_ftp.py` (Python, GitHub Actions) |
+| **AMeDAS** | `mechatrax` | 気象庁 10 分値 JSON (公開) | `gas/amedas_fetcher.gs` (GAS, POST受信時に自動) |
 
-- **気温** (air_temp_c): 日中最高気温（°C）
-- **降雨量** (precip_1h_mm): 1日の降水量（mm）
-- **日照時間** (sunshine_1h_h): 日中日照時間（時間）
-  
-> 注: 現在、Open-Meteo API から気温と降水量を取得します。日照時間は API から取得できないため、フロントエンド側で補うことができます。
+取得される気象フィールド:
 
-## 設定方法
+- **気温** (`air_temp_c`): 外気温（°C）
+- **降雨量** (`precip_1h_mm`): 1 時間降水量（mm）
+- **日照時間** (`sunshine_1h_h`): 1 時間日照時間（h）
 
-### GitHub Actions Secrets に設定する
+## A. Open-Meteo 経路（remote-ftp 系統）
 
-FTP インジェストのワークフローに以下の環境変数を追加してください：
+### 設定方法
 
-```yaml
-env:
-  FTP_SITE_LATITUDE: "37.7749"      # 圃場の緯度
-  FTP_SITE_LONGITUDE: "122.4194"    # 圃場の経度
-```
-
-**重要**: 座標は PII（個人識別情報）であり、本リポジトリに直接置くことは禁止されています。
-GitHub Actions Secrets（または環境変数として設定）を使用してください。
-
-### 環境変数
+GitHub Actions Secrets に以下を登録:
 
 | 変数名 | 説明 | 必須 | 例 |
 |--------|------|------|-----|
-| `FTP_SITE_LATITUDE` | 圃場の緯度 | ✗ | `37.7749` |
-| `FTP_SITE_LONGITUDE` | 圃場の経度 | ✗ | `122.4194` |
+| `FTP_SITE_LATITUDE` | 圃場の緯度 | ✗（未設定で気象取得スキップ） | `38.4` |
+| `FTP_SITE_LONGITUDE` | 圃場の経度 | ✗ | `140.9` |
 
-## 動作
+**重要**: 座標は PII（個人識別情報）に該当します。GitHub Actions Secrets で管理し、リポジトリにコミットしないでください。
 
-### 有効時（座標が提供されている）
+### 動作
 
-1. **データ取得**
-   - FTP からセンサー CSV ファイルをダウンロード
-   - Open-Meteo API から当該日付の気象データを取得
-   - センサーデータと気象データをマージ
+1. FTP からセンサー CSV ファイルをダウンロード
+2. Open-Meteo API から当該日付の気象データを取得（hourly: temperature_2m, precipitation, sunshine_duration）
+3. センサーのタイムスタンプに最も近い時間帯の気象値をマージ
+4. Google Sheets に保存（`air_temp`, `precip_1h`, `sunshine_1h` 列）
 
-2. **マージルール**
-   - センサーのタイムスタンプから日付（YYYY-MM-DD）を抽出
-   - その日付に対応する気象データを結合
-   - 気象データは 1 行 / 1 日 なので、1 日のすべてのセンサー行に同じ気象値が入ります
+座標が未提供の場合は気象データ取得をスキップし、気象列は空のまま保存（エラーにはならない）。
 
-3. **Google Sheets に保存**
-   - `sensor_raw` シートに新しい列を追加：
-     - `air_temp`: 気温（°C）
-     - `precip_1h`: 降雨量（mm）
-     - `sunshine_1h`: 日照時間（h）
+## B. AMeDAS 経路（mechatrax 系統）
 
-### 無効時（座標が未提供）
+### 動作
 
-- 座標が提供されていない場合、気象データ取得はスキップ
-- 気象列は空（NULL）で保存
-- エラーは発生しません（graceful degradation）
+Mechatrax デバイスが POST 時に送信する `latitude` / `longitude` を使い、
+`gas/amedas_fetcher.gs` が最寄りの AMeDAS 観測点を検索して気象データを自動付与します。
 
-## データソース
+- 書き込み先: スプレッドシートの AC〜AE 列（外気温 / 1h降水量 / 1h日照時間）
+- キャッシュ: AMeDAS 観測点テーブルを 6 時間キャッシュ（GAS CacheService）
+- フォールバック: 取得失敗時は該当列を空欄にし、書き込み自体は継続
 
-**Open-Meteo API** (free, no API key required)
-- https://archive-api.open-meteo.com/
-- 多数の気象パラメータが利用可能
-- 日本全国対応
+### 設定
+
+特別な設定は不要。`gas/mechatrax_receiver.gs` と `gas/amedas_fetcher.gs` を同じ GAS プロジェクトに配置するだけで動作します。
+詳細は [`04_gas_setup.md`](04_gas_setup.md) セクション A' を参照。
 
 ## データスキーマ
 
-### Google Sheets `sensor_raw` / `sensor_9am` シート
-
-新しい列が追加されました：
-
-```
-date | siteId | addr | number | battery1 | battery2 | bulk_ec | vwc | soil_temp | air_temp | precip_1h | sunshine_1h
-```
-
-| 列名 | 型 | 説明 |
-|------|-----|------|
-| `air_temp` | float? | 気温（°C）|
-| `precip_1h` | float? | 降雨量（mm）|
-| `sunshine_1h` | float? | 日照時間（h）|
-
-### フロントエンド NormalizedRow
-
-正規化モデル（`scripts/adapters/normalized.py`）も更新されました：
+### 正規化モデル（共通）
 
 ```python
 @dataclass
@@ -96,26 +66,39 @@ class NormalizedRow:
     sunshine_1h_h: float | None = None
 ```
 
+### Google Sheets 列（remote-ftp: `sensor_raw` / `sensor_9am`）
+
+```
+date | siteId | addr | number | battery1 | battery2 | bulk_ec | vwc | soil_temp | air_temp | precip_1h | sunshine_1h
+```
+
+### Google Sheets 列（mechatrax: AC〜AE）
+
+```
+AC: 外気温 | AD: 1hの降水量 | AE: 1hの日照時間
+```
+
 ## トラブルシューティング
 
-### 天気データが NULL のままです
+### 天気データが NULL のままです（Open-Meteo）
 
 1. **座標が正しいか確認**
-   - `FTP_SITE_LATITUDE` と `FTP_SITE_LONGITUDE` が正しく設定されているか
-   - 座標は有効な緯度・経度値か（例: 37.7749, 122.4194）
+   - `FTP_SITE_LATITUDE` と `FTP_SITE_LONGITUDE` が Secrets に設定されているか
+   - 座標は有効な緯度・経度値か（日本: 緯度 24〜46、経度 122〜154）
 
 2. **API 接続を確認**
-   - Open-Meteo API は無料で公開されています
+   - Open-Meteo API は無料で公開されていますが、アーカイブデータは約 2 ヶ月前までしかない場合あり
    - ファイアウォール / プロキシ の設定を確認
 
 3. **ログを確認**
-   - GitHub Actions ログで「Fetching weather data」を検索
-   - 「Failed to fetch weather data」エラーメッセージがあれば詳細を確認
+   - GitHub Actions ログで「weather」を検索
+   - エラーメッセージがあれば詳細を確認
 
-### 日照時間が常に NULL です
+### AMeDAS データが空欄です（Mechatrax）
 
-Open-Meteo Archive API では日照時間データが利用できません。
-フロントエンド側で日照計算を行うか、別途 API（例: NASA POWER）を使用してください。
+1. POST ボディに `latitude` / `longitude` が含まれているか確認
+2. GAS の実行ログ（Apps Script エディタ → 実行数）でエラーを確認
+3. AMeDAS の観測点データは 6 時間キャッシュされる。新しい観測点追加直後はキャッシュ切れを待つ
 
 ## 例
 
@@ -150,40 +133,20 @@ jobs:
           FTP_DIR: ${{ secrets.FTP_DIR }}
           FTP_SPREADSHEET_ID: ${{ secrets.FTP_SPREADSHEET_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          INGEST_FILTER_START: '2026-06-01T00:00+09:00'
-          SITE_ID: 'site-a'
+          INGEST_FILTER_START: ${{ secrets.INGEST_FILTER_START }}
+          SITE_ID: ${{ vars.SITE_ID }}
           FTP_SITE_LATITUDE: ${{ secrets.FTP_SITE_LATITUDE }}
           FTP_SITE_LONGITUDE: ${{ secrets.FTP_SITE_LONGITUDE }}
         run: python -m scripts.ingest_ftp
 ```
 
-## 技術詳細
+## 参考: AMeDAS データソース（Mechatrax 用）
 
-### 気象データのマージ方法
+`gas/amedas_fetcher.gs` が使用する JMA 公開エンドポイント:
 
-```python
-# センサー時刻から日付を抽出
-df['_date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
+- 最新時刻: `https://www.jma.go.jp/bosai/amedas/data/latest_time.txt`
+- 観測点マップ: `https://www.jma.go.jp/bosai/amedas/data/map/yyyymmddHHmm00.json`
 
-# 気象データ（日付インデックス）とマージ
-df = df.merge(weather_df, left_on='_date', right_index=True, how='left')
-```
+取得項目: `temp`（気温）, `precipitation1h`（1時間降水量）, `sun1h`（1時間日照時間）
 
-### Open-Meteo API 呼び出し
-
-```python
-url = (
-    "https://archive-api.open-meteo.com/v1/archive"
-    f"?latitude={lat}&longitude={lon}"
-    "&daily=temperature_2m_max,temperature_2m_min,precipitation_sum"
-    "&timezone=Asia%2FTokyo"
-    f"&start_date={start_date}&end_date={end_date}"
-)
-```
-
-## 将来の拡張
-
-- [ ] Forecast API との統合（将来の気象予報）
-- [ ] 複数の気象 API サポート（AWS、Google Cloud など）
-- [ ] 時間単位の気象データ取得（日単位から）
-- [ ] GUI での座標設定（レジストリシート経由）
+最寄り観測点の検索はユークリッド距離（緯度・経度の差分）で行い、品質フラグが正常な値のみ使用。

@@ -102,7 +102,7 @@
 | `users`   | `email,role,enabled` |
 | `acl`     | `email,sourceId,permission` |
 | `theme`   | `themeId,json` |
-| `events`  | `date,sourceId,label,color` |
+| `events`  | `date,sourceId,label,color,deviceId` |
 | `layouts` | `sourceId,config` |
 
 各列の意味（後で値を入れるとき用）:
