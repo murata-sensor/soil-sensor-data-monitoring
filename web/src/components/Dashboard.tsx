@@ -306,9 +306,65 @@ export default function Dashboard() {
     <div className="min-h-screen" style={{ background: theme.bg, color: theme.text }}>
       <header className="px-4 sm:px-6 py-3 sm:py-4 border-b"
         style={{ background: theme.surface }}>
-        <div className="flex justify-between items-center">
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+          {/* 左: タイトル */}
           <div className="text-base sm:text-lg font-semibold">Soil Sensor Monitor</div>
-          <div className="flex gap-1 sm:gap-2 items-center">
+          {/* 中央: データソース・表示期間・CSV */}
+          <div className="flex items-center gap-2 flex-wrap justify-center">
+            <div className="flex items-center gap-2 min-w-0">
+              <label className="text-slate-600 shrink-0 text-xs sm:text-sm">データソース：</label>
+              <select
+                value={selectedSourceId || ""}
+                onChange={(e) => setSelectedSource(e.target.value || null)}
+                className="border rounded px-2 py-1 bg-white text-xs sm:text-sm min-w-0 sm:min-w-[14rem]"
+              >
+                {allowed.length === 0 && <option value="">(アクセス可能なソースなし)</option>}
+                {allowed.map((s) => (
+                  <option key={s.sourceId} value={s.sourceId}>
+                    {s.displayName} [{s.schemaType}]
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="text-slate-600 shrink-0 text-xs sm:text-sm">表示期間：</label>
+              <select
+                value={settings?.dateRange.type || "last7d"}
+                onChange={(e) => {
+                  const type = e.target.value as DateRangeType;
+                  updateSettings({ dateRange: { ...settings!.dateRange, type } });
+                }}
+                className="border rounded px-2 py-1 bg-white text-xs sm:text-sm"
+              >
+                {DATE_RANGE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              {settings?.dateRange.type === "custom" && (
+                <>
+                  <input type="date" className="border rounded px-1 py-0.5 text-xs"
+                    value={settings.dateRange.start || ""}
+                    onChange={(e) => updateSettings({
+                      dateRange: { ...settings.dateRange, start: e.target.value },
+                    })} />
+                  <span>〜</span>
+                  <input type="date" className="border rounded px-1 py-0.5 text-xs"
+                    value={settings.dateRange.end || ""}
+                    onChange={(e) => updateSettings({
+                      dateRange: { ...settings.dateRange, end: e.target.value },
+                    })} />
+                </>
+              )}
+              <button
+                onClick={() => selected && downloadCsv(`${selected.sourceId}.csv`, filteredRows)}
+                disabled={!filteredRows.length}
+                className="px-2 sm:px-3 py-1 rounded bg-emerald-600 text-white disabled:opacity-50 text-xs sm:text-sm">
+                CSV
+              </button>
+            </div>
+          </div>
+          {/* 右: 設定・管理・ログアウト */}
+          <div className="flex gap-1 sm:gap-2 items-center justify-end">
             <button onClick={() => setShowSettings(true)}
               className="px-2 sm:px-3 py-1 rounded bg-indigo-600 text-white text-xs sm:text-sm">
               設定
@@ -321,59 +377,6 @@ export default function Dashboard() {
               className="px-2 sm:px-3 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 text-xs sm:text-sm"
             >
               ログアウト
-            </button>
-          </div>
-        </div>
-        <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-2 text-sm">
-          <div className="flex items-center gap-2 min-w-0">
-            <label className="text-slate-600 shrink-0 text-xs sm:text-sm">データソース：</label>
-            <select
-              value={selectedSourceId || ""}
-              onChange={(e) => setSelectedSource(e.target.value || null)}
-              className="border rounded px-2 py-1 bg-white text-xs sm:text-sm min-w-0 flex-1 sm:min-w-[14rem] sm:flex-none"
-            >
-              {allowed.length === 0 && <option value="">(アクセス可能なソースなし)</option>}
-              {allowed.map((s) => (
-                <option key={s.sourceId} value={s.sourceId}>
-                  {s.displayName} [{s.schemaType}]
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <label className="text-slate-600 shrink-0 text-xs sm:text-sm">表示期間：</label>
-            <select
-              value={settings?.dateRange.type || "last7d"}
-              onChange={(e) => {
-                const type = e.target.value as DateRangeType;
-                updateSettings({ dateRange: { ...settings!.dateRange, type } });
-              }}
-              className="border rounded px-2 py-1 bg-white text-xs sm:text-sm"
-            >
-              {DATE_RANGE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-            {settings?.dateRange.type === "custom" && (
-              <>
-                <input type="date" className="border rounded px-1 py-0.5 text-xs"
-                  value={settings.dateRange.start || ""}
-                  onChange={(e) => updateSettings({
-                    dateRange: { ...settings.dateRange, start: e.target.value },
-                  })} />
-                <span>〜</span>
-                <input type="date" className="border rounded px-1 py-0.5 text-xs"
-                  value={settings.dateRange.end || ""}
-                  onChange={(e) => updateSettings({
-                    dateRange: { ...settings.dateRange, end: e.target.value },
-                  })} />
-              </>
-            )}
-            <button
-              onClick={() => selected && downloadCsv(`${selected.sourceId}.csv`, filteredRows)}
-              disabled={!filteredRows.length}
-              className="px-2 sm:px-3 py-1 rounded bg-emerald-600 text-white disabled:opacity-50 text-xs sm:text-sm">
-              CSV
             </button>
           </div>
         </div>
