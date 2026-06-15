@@ -1,6 +1,6 @@
 # Google Apps Script
 
-v2 では GAS プロジェクトを 2 種類に分けて使う：
+v2 では GAS プロジェクトを 3 種類に分けて使う：
 
 ## (A) 受信用（データ用スプレッドシートにバインド）
 
@@ -21,6 +21,15 @@ Script Properties: `INGEST_TOKEN`（必須）、`M5_TARGET_SHEET` / `MX_TARGET_S
 | `read_proxy.gs` | `accessMode=proxy` のデータソース読み出し API |
 
 Script Properties: `ADMIN_ALLOWED_EMAILS`、`GOOGLE_OAUTH_CLIENT_ID`。
+
+## (C) アラート送信用（FTP データ用スプレッドシートにバインド）
+
+| ファイル | 用途 |
+| --- | --- |
+| `alert_mailer.gs` | `alerts` シートを監視し、status=new の行をメールで通知して sent に更新 |
+
+Script Properties: `ALERT_TO`（送信先メールアドレス、カンマ区切り）。
+WebApp デプロイは不要。時間ベースのトリガー（5分間隔等）で `processNewAlerts` を呼ぶ。
 
 ## デプロイ
 

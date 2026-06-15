@@ -11,6 +11,7 @@
 - **マルチデータソース**: 案件ごとに異なる Spreadsheet をレジストリで一元管理
 - **カスタムレイアウト**: デバイス列配置・ゲージ・テキスト・画像パネルを JSON で自由にレイアウト
 - **マルチセンサ対応**: `sensorNumber` による深度別表示・色分け
+- **アラート通知**: センサ異常値（接触不良・故障）・電池残量低下をメールで自動通知
 - **レスポンシブ**: モバイルでは 2 カラム自動スタック
 - **気象データ統合**: Open-Meteo (FTP) / AMeDAS (Mechatrax) から自動取得
 - **期間フィルタ**: 24h / 3d / 7d / 30d / all / カスタム日付範囲
@@ -37,7 +38,7 @@
 │   └── layout_example.json # レイアウト JSON テンプレート
 ├── scripts/                # FTP→Sheets/Drive 取り込み（Python, GitHub Actions で実行）
 │   └── adapters/           # 正規化アダプタ（Python）
-├── gas/                    # Google Apps Script（M5Stack/Mechatrax受信・気象取得・管理API）
+├── gas/                    # Google Apps Script（M5Stack/Mechatrax受信・気象取得・管理API・アラート送信）
 ├── web/                    # React + Vite + TypeScript フロントエンド
 │   └── src/adapters/       # 正規化アダプタ（TypeScript）
 └── .github/workflows/      # CI / 取り込み / Pages デプロイ

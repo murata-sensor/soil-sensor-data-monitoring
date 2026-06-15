@@ -30,6 +30,7 @@ from typing import Callable
 import pandas as pd
 import urllib.request
 
+from .alerts import check_alerts, is_smtp_configured, load_alert_rules, send_alert_email, write_alerts_to_sheet
 from .sensor_parser import IngestionConfig, concat_csvs, select_nine_am, to_published
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -292,6 +293,22 @@ def main() -> int:
         log.info("Weather coordinates not provided (FTP_SITE_LATITUDE/FTP_SITE_LONGITUDE)")
 
     published = to_published(df, cfg, weather_df=weather_df)
+
+    # Check for alert conditions (sensor faults, low battery)
+    alert_rules = load_alert_rules(sheets)
+    alert_result = check_alerts(published, rules=alert_rules)
+    if alert_result.has_alerts:
+        log.warning(
+            "Detected %d alert condition(s): %d sensor fault(s), %d low battery",
+            len(alert_result.conditions),
+            len(alert_result.sensor_faults),
+            len(alert_result.low_battery),
+        )
+        # Primary: write to "alerts" sheet (GAS sends email)
+        write_alerts_to_sheet(alert_result, sheets)
+        # Fallback: direct SMTP if configured
+        if is_smtp_configured():
+            send_alert_email(alert_result)
 
     # Fast path: append only strictly newer rows.
     # Backfill path: when INGEST_FILTER_START is older than current last row,

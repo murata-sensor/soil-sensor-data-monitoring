@@ -169,7 +169,34 @@ https://docs.google.com/spreadsheets/d/1abcDEF...xyz/edit#gid=0
 
 1. 1-1 と同じ手順で空のスプレッドシートを 1 枚作り、名前を `SoilSensorFTP` のように付ける
 2. アドレスバーから ID をコピー（後で `FTP_SPREADSHEET_ID` として登録）
-3. このスプレッドシートを **後述のサービスアカウントに「編集者」共有** する（手順 5-4 で説明）
+3. シート（タブ）を以下のように準備する:
+   - `sensor_raw`（ヘッダ不要。取り込みスクリプトが自動追記）
+   - `sensor_9am`（ヘッダ不要。取り込みスクリプトが自動追記）
+   - `alert_rules`（アラート条件定義。ヘッダ + 初期ルールを入力。詳細は下記）
+   - `alerts`（アラート検知結果。ヘッダのみ入力。詳細は下記）
+4. このスプレッドシートを **後述のサービスアカウントに「編集者」共有** する（手順 5-4 で説明）
+
+##### `alert_rules` シートの初期設定
+
+A1〜F1 にヘッダ、2 行目以降に検知条件を入力:
+
+| enabled | field | operator | value | alert_type | message |
+|---------|-------|----------|-------|------------|---------|
+| TRUE | bulk_ec | == | 32.768 | sensor_fault | 接触不良・故障の疑い |
+| TRUE | vwc | == | 3276.8 | sensor_fault | 接触不良・故障の疑い |
+| TRUE | battery2 | < | 2.5 | low_battery | 電池残量低下 |
+
+> 後から行を追加・変更するだけでアラート条件を変更できます。このシートが無くても上記と同等のデフォルトが適用されます。
+
+##### `alerts` シートの初期設定
+
+A1〜H1 にヘッダのみ入力（データ行は自動追加される）:
+
+```
+timestamp, detected_at, alert_type, site_id, addr, sensor_number, details, status
+```
+
+> アラートメール送信の設定は [`04_gas_setup.md`](04_gas_setup.md) のセクション C を参照。
 
 #### パターンB: M5Stack / Mechatrax の **新規** 案件
 
@@ -360,7 +387,7 @@ https://drive.google.com/drive/folders/ここがフォルダID
 
 - [ ] Registry スプレッドシートを作成し、6 つのシート（sources/users/acl/theme/events/layouts）にヘッダを入力した
 - [ ] Registry Spreadsheet ID を控えた
-- [ ] （リモートFTPを使う場合）FTP用スプレッドシートを作成し、サービスアカウントに「編集者」共有した
+- [ ] （リモートFTPを使う場合）FTP用スプレッドシートを作成し、`alert_rules` と `alerts` シートを準備し、サービスアカウントに「編集者」共有した
 - [ ] （該当する場合）M5Stack/Mechatrax の既存スプレッドシートを sources シートに登録し、アクセス方式に応じて適切なアカウントに「閲覧者」共有を依頼した
 - [ ] Google Cloud プロジェクトを作成した
 - [ ] Google Sheets API を有効化した
