@@ -242,17 +242,38 @@ export interface DataSourceResult {
   rows: NormalizedRow[];
 }
 
-async function readDirect(src: SourceRow): Promise<string[][]> {
+/**
+ * Fetch the list of sheet tab names for a spreadsheet.
+ * Filters out tabs whose name starts with "_".
+ */
+export async function getSheetNames(spreadsheetId: string): Promise<string[]> {
+  const token = await getAccessToken();
+  const url =
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}` +
+    `?fields=sheets.properties.title`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`Sheets API ${res.status} fetching sheet names`);
+  const json = (await res.json()) as {
+    sheets?: { properties?: { title?: string } }[];
+  };
+  const names = (json.sheets ?? [])
+    .map((s) => s.properties?.title ?? "")
+    .filter((name) => name && !name.startsWith("_"));
+  return names;
+}
+
+async function readDirect(src: SourceRow, sheetNameOverride?: string): Promise<string[][]> {
   // Read from headerRow downwards so the adapter receives the header as row 0.
-  const range = `${src.sheetName}!A${src.headerRow}:ZZ`;
+  const sheetName = (sheetNameOverride || src.sheetName).trim();
+  const range = `${sheetName}!A${src.headerRow}:ZZ`;
   return sheetsGet(src.spreadsheetId, range);
 }
 
-async function readProxy(src: SourceRow, idToken: string): Promise<string[][]> {
+async function readProxy(src: SourceRow, idToken: string, sheetNameOverride?: string): Promise<string[][]> {
   if (!PROXY_URL) throw new Error("VITE_GAS_PROXY_URL is not set for proxy access");
   const res = await fetch(PROXY_URL, {
     method: "POST",
-    body: JSON.stringify({ idToken, sourceId: src.sourceId }),
+    body: JSON.stringify({ idToken, sourceId: src.sourceId, sheetName: sheetNameOverride || undefined }),
   });
   if (!res.ok) throw new Error(`proxy ${res.status}`);
   const json = (await res.json()) as { ok: boolean; error?: string; values?: string[][] };
@@ -263,10 +284,11 @@ async function readProxy(src: SourceRow, idToken: string): Promise<string[][]> {
 export async function loadDataSource(
   source: SourceRow,
   idToken?: string,
+  options?: { sheetNameOverride?: string },
 ): Promise<DataSourceResult> {
   const values = source.accessMode === "proxy"
-    ? await readProxy(source, idToken || "")
-    : await readDirect(source);
+    ? await readProxy(source, idToken || "", options?.sheetNameOverride)
+    : await readDirect(source, options?.sheetNameOverride);
   return { source, rows: toNormalized(source.schemaType, values) };
 }
 

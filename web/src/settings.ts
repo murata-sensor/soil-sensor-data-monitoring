@@ -29,7 +29,7 @@ export interface DeviceColorMap {
   [deviceId: string]: string;
 }
 
-export type FtpSheetName = "sensor_raw" | "sensor_9am";
+export type FtpSheetName = string;
 
 export interface UserSettings {
   dateRange: DateRange;

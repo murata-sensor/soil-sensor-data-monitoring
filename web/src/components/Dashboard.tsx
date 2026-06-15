@@ -9,7 +9,7 @@ import "chartjs-adapter-date-fns";
 import { ResponsiveGridLayout, useContainerWidth, type Layout, type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import {
-  loadAllRegistry, loadDataSource,
+  loadAllRegistry, loadDataSource, getSheetNames,
   resolveAllowedSources, RegistryAccessDeniedError, UserNotRegisteredError,
 } from "../api/sheets";
 import { useApp } from "../store";
@@ -92,6 +92,7 @@ export default function Dashboard() {
   const [needsConsent, setNeedsConsent] = useState(false);
   const [settings, setSettingsState] = useState<UserSettings | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [sheetNames, setSheetNames] = useState<string[]>([]);
 
   const updateSettings = useCallback((patch: Partial<UserSettings>) => {
     if (!user || !settings) return;
@@ -104,6 +105,8 @@ export default function Dashboard() {
   useEffect(() => {
     if (user) setSettingsState(loadSettings(user.email));
   }, [user]);
+
+  const ftpSheetName = settings?.ftpSheetName ?? "sensor_raw";
 
   const loadRegistry = async () => {
     if (!user) return;
@@ -141,16 +144,29 @@ export default function Dashboard() {
     const src = allowed.find((s) => s.sourceId === selectedSourceId);
     if (!src) return;
     setLoading(true); setError(null);
-    loadDataSource(src, user.idToken)
+    loadDataSource(src, user.idToken, {
+      sheetNameOverride: src.schemaType === "remote-ftp" ? ftpSheetName : undefined,
+    })
       .then((r) => setRows(r.rows))
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [user, allowed, selectedSourceId]);
+  }, [user, allowed, selectedSourceId, ftpSheetName]);
 
   const selected = useMemo(
     () => allowed.find((s) => s.sourceId === selectedSourceId) || null,
     [allowed, selectedSourceId],
   );
+
+  // Fetch sheet tab names when selected source changes
+  useEffect(() => {
+    if (!selected || selected.schemaType !== "remote-ftp") {
+      setSheetNames([]);
+      return;
+    }
+    getSheetNames(selected.spreadsheetId)
+      .then((names) => setSheetNames(names))
+      .catch(() => setSheetNames([]));
+  }, [selected]);
 
   const panels = useMemo<ThemePanel[]>(() => {
     if (!selected) return theme.panels;
@@ -326,6 +342,20 @@ export default function Dashboard() {
                 ))}
               </select>
             </div>
+            {selected?.schemaType === "remote-ftp" && (
+              <div className="flex items-center gap-1 min-w-0">
+                <label className="text-slate-600 shrink-0 text-xs sm:text-sm">シート：</label>
+                <select
+                  value={ftpSheetName}
+                  onChange={(e) => updateSettings({ ftpSheetName: e.target.value })}
+                  className="border rounded px-2 py-1 bg-white text-xs sm:text-sm"
+                >
+                  {sheetNames.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="flex items-center gap-2 flex-wrap">
               <label className="text-slate-600 shrink-0 text-xs sm:text-sm">表示期間：</label>
               <select
