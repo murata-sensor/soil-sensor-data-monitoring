@@ -2,7 +2,7 @@
 
 Reads the published `sensor_raw` / `sensor_9am` schema produced by
 `scripts.sensor_parser.to_published`:
-    date, siteId, addr, number, battery1, battery2, bulk_ec, vwc, soil_temp,
+    date, addr, number, battery1, battery2, bulk_ec, vwc, soil_temp,
     air_temp, precip_1h, sunshine_1h
 """
 

@@ -45,6 +45,5 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           DRIVE_BACKUP_FOLDER_ID: ${{ secrets.DRIVE_BACKUP_FOLDER_ID }}
           INGEST_FILTER_START: ${{ secrets.INGEST_FILTER_START }}
-          SITE_ID: ${{ vars.SITE_ID || 'site-a' }}
           INGEST_YEAR: ${{ inputs.year }}
         run: python -m scripts.ingest_ftp

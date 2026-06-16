@@ -11,7 +11,6 @@ Required env vars (Secrets):
 Optional:
     DRIVE_BACKUP_FOLDER_ID
     INGEST_YEAR              (default: current JST year)
-    SITE_ID                  (default: site-a)
     FTP_SITE_LATITUDE        (site latitude for weather data; required for weather)
     FTP_SITE_LONGITUDE       (site longitude for weather data; required for weather)
 """
@@ -93,18 +92,18 @@ def _filter_rows_not_existing(
 ) -> pd.DataFrame:
     """Return only rows not already present in the sheet.
 
-    Uses (date, siteId, addr, number) as a stable row identity.
+    Uses (date, addr, number) as a stable row identity.
     """
     if published.empty:
         return published
 
-    existing_keys: set[tuple[str, str, str, str]] = set()
+    existing_keys: set[tuple[str, str, str]] = set()
     for row in existing_rows:
-        if len(row) < 4:
+        if len(row) < 3:
             continue
-        existing_keys.add((str(row[0]), str(row[1]), str(row[2]), str(row[3])))
+        existing_keys.add((str(row[0]), str(row[1]), str(row[2])))
 
-    keys = published[["date", "siteId", "addr", "number"]].astype(str)
+    keys = published[["date", "addr", "number"]].astype(str)
     mask = ~keys.apply(tuple, axis=1).isin(existing_keys)
     return published[mask]
 
@@ -226,12 +225,11 @@ def main() -> int:
         raise RuntimeError(
             "Required env var missing: FTP_SPREADSHEET_ID (or legacy SPREADSHEET_ID)"
         )
-    site_id = os.environ.get("SITE_ID", "site-a")
     year = os.environ.get("INGEST_YEAR") or str(datetime.now(JST).year)
     start_after = pd.Timestamp(_env("INGEST_FILTER_START"))
     if start_after.tzinfo is None:
         start_after = start_after.tz_localize(JST)
-    cfg = IngestionConfig(site_id=site_id, start_after=start_after)
+    cfg = IngestionConfig(start_after=start_after)
 
     sheets = SheetsClient(spreadsheet_id)
 
@@ -315,7 +313,7 @@ def main() -> int:
     # switch to key-based de-duplication so historical gaps can be filled.
     last_ts = _parse_ts_as_jst(last)
     if last_ts is not None and cfg.start_after < last_ts:
-        existing = sheets.get_values("sensor_raw!A2:D")
+        existing = sheets.get_values("sensor_raw!A2:C")
         before = len(published)
         published = _filter_rows_not_existing(published, existing)
         log.info(
@@ -334,7 +332,7 @@ def main() -> int:
     log.info("Appended %d rows to sensor_raw", n1)
 
     nine = select_nine_am(published)
-    existing_nine = sheets.get_values("sensor_9am!A2:D")
+    existing_nine = sheets.get_values("sensor_9am!A2:C")
     nine = _filter_rows_not_existing(nine, existing_nine)
     n2 = sheets.append_rows("sensor_9am", nine.values.tolist())
     log.info("Appended %d rows to sensor_9am", n2)

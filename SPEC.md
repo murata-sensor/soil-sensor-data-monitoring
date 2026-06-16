@@ -66,7 +66,6 @@ GitHub Pages 上の SPA で可視化する。閲覧は Google アカウントで
 | --- | --- | --- |
 | `ts` | ISO8601 (JST) | 計測時刻 |
 | `sourceId` | string | レジストリ上の論理 ID（例: `src-001`） |
-| `siteId` | string | 圃場/プロジェクト識別子 |
 | `deviceId` | string | シリアル番号や addr |
 | `sensorNumber` | string? | デバイス内のセンサ番号（例: `1`, `2`, `3` = 深度別） |
 | `temperature_c` | number? | 土壌温度 |
@@ -421,7 +420,6 @@ GAS トリガー（`gas/alert_mailer.gs`）が `alerts` シートを監視し、
 | `timestamp` | ISO8601 (JST) | センサデータの計測時刻 |
 | `detected_at` | ISO8601 (JST) | アラート検知日時 |
 | `alert_type` | `sensor_fault` / `low_battery` | アラート種別 |
-| `site_id` | string | サイト ID |
 | `addr` | string | デバイスアドレス |
 | `sensor_number` | string | センサ番号 |
 | `details` | string | 詳細メッセージ |

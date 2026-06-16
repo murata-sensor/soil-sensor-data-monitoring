@@ -52,7 +52,6 @@ NINE_AM_SAMPLE = (
 
 def _cfg() -> IngestionConfig:
     return IngestionConfig(
-        site_id="site-a",
         start_after=pd.Timestamp("2026-01-01T00:00+09:00"),
     )
 
@@ -86,17 +85,15 @@ def test_to_published_filters_and_shapes():
     df = parse_csv_text(SAMPLE)
     pub = to_published(df, _cfg())
     assert list(pub.columns) == [
-        "date", "siteId", "addr", "number", "battery1", "battery2",
+        "date", "addr", "number", "battery1", "battery2",
         "bulk_ec", "vwc", "soil_temp", "air_temp", "precip_1h", "sunshine_1h",
     ]
-    assert (pub["siteId"] == "site-a").all()
     assert pub["addr"].iloc[0] == "fac"
 
 
 def test_to_published_respects_start_after():
     df = parse_csv_text(SAMPLE)
     cfg = IngestionConfig(
-        site_id="site-a",
         start_after=pd.Timestamp("2099-01-01T00:00+09:00"),
     )
     pub = to_published(df, cfg)

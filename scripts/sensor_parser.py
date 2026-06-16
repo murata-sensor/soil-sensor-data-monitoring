@@ -25,14 +25,13 @@ RAW_COLUMNS = [
 
 # Columns published to Spreadsheet `sensor_raw` / `sensor_9am`.
 PUBLISHED_COLUMNS = [
-    "date", "siteId", "addr", "number", "battery1", "battery2",
+    "date", "addr", "number", "battery1", "battery2",
     "bulk_ec", "vwc", "soil_temp", "air_temp", "precip_1h", "sunshine_1h",
 ]
 
 
 @dataclass(frozen=True)
 class IngestionConfig:
-    site_id: str
     start_after: pd.Timestamp  # tz-aware
     nine_am_window: tuple[str, str] = ("08:46", "09:14")
 
@@ -91,7 +90,7 @@ def to_published(
 
     Args:
         df: Raw sensor data DataFrame (indexed by Time in Asia/Tokyo)
-        cfg: IngestionConfig with site_id and start_after timestamp
+        cfg: IngestionConfig with start_after timestamp
         weather_df: Optional DataFrame with weather data to merge.
                    Must have a JST DatetimeIndex and columns:
                    'air_temp', 'precip_1h', 'sunshine_1h'
@@ -101,7 +100,6 @@ def to_published(
     filtered = df[df.index > cfg.start_after]
     out = pd.DataFrame({
         "date": filtered.index.strftime("%Y-%m-%d %H:%M:%S+09:00"),
-        "siteId": cfg.site_id,
         "addr": filtered["Addr"].apply(
             lambda x: hex(x)[2:] if isinstance(x, int) else str(x)
         ),
@@ -133,7 +131,7 @@ def to_published(
 
 
 def select_nine_am(published: pd.DataFrame, window=("08:46", "09:14")) -> pd.DataFrame:
-    """Keep the reading closest to 09:00 per (date, siteId, addr, number)."""
+    """Keep the reading closest to 09:00 per (date, addr, number)."""
     if published.empty:
         return published
     df = published.copy()
@@ -145,7 +143,7 @@ def select_nine_am(published: pd.DataFrame, window=("08:46", "09:14")) -> pd.Dat
     df["_distance_to_9am"] = (df["_ts"] - target).abs()
     df["_date"] = df["_ts"].dt.strftime("%Y-%m-%d")
     df = df.sort_values(["_distance_to_9am", "_ts"])
-    df = df.drop_duplicates(subset=["_date", "siteId", "addr", "number"], keep="first")
+    df = df.drop_duplicates(subset=["_date", "addr", "number"], keep="first")
     # Sort by date to ensure chronological order in output
     df = df.sort_values("_ts")
     return df.drop(columns=["_t", "_ts", "_date", "_distance_to_9am"]).reset_index(drop=True)

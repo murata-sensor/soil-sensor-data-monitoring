@@ -26,7 +26,6 @@ def _make_published(**overrides) -> pd.DataFrame:
     """Create a single-row published DataFrame with defaults."""
     row = {
         "date": "2026-06-15 09:00:00+09:00",
-        "siteId": "site-a",
         "addr": "1a",
         "number": "1",
         "battery1": 3.2,
@@ -64,7 +63,7 @@ class TestCheckAlerts:
         assert result.conditions == []
 
     def test_empty_dataframe(self):
-        df = pd.DataFrame(columns=["date", "siteId", "addr", "number", "battery2", "bulk_ec", "vwc"])
+        df = pd.DataFrame(columns=["date", "addr", "number", "battery2", "bulk_ec", "vwc"])
         result = check_alerts(df)
         assert not result.has_alerts
 
@@ -114,15 +113,15 @@ class TestCheckAlerts:
 
     def test_multiple_rows(self):
         rows = [
-            {"date": "2026-06-15 09:00:00+09:00", "siteId": "site-a", "addr": "1a",
+            {"date": "2026-06-15 09:00:00+09:00", "addr": "1a",
              "number": "1", "battery1": 3.2, "battery2": 3.0,
              "bulk_ec": BULK_EC_FAULT_VALUE, "vwc": 25.0, "soil_temp": 20.0,
              "air_temp": None, "precip_1h": None, "sunshine_1h": None},
-            {"date": "2026-06-15 09:00:00+09:00", "siteId": "site-a", "addr": "1a",
+            {"date": "2026-06-15 09:00:00+09:00", "addr": "1a",
              "number": "2", "battery1": 3.2, "battery2": 2.3,
              "bulk_ec": 0.5, "vwc": 25.0, "soil_temp": 20.0,
              "air_temp": None, "precip_1h": None, "sunshine_1h": None},
-            {"date": "2026-06-15 09:00:00+09:00", "siteId": "site-a", "addr": "1a",
+            {"date": "2026-06-15 09:00:00+09:00", "addr": "1a",
              "number": "3", "battery1": 3.2, "battery2": 3.1,
              "bulk_ec": 0.5, "vwc": 25.0, "soil_temp": 20.0,
              "air_temp": None, "precip_1h": None, "sunshine_1h": None},
@@ -144,7 +143,6 @@ class TestCheckAlerts:
         result = check_alerts(df)
         c = result.sensor_faults[0]
         assert c.timestamp == "2026-06-15 09:00:00+09:00"
-        assert c.site_id == "site-a"
         assert c.addr == "1a"
         assert c.sensor_number == "1"
         assert c.alert_type == "sensor_fault"
@@ -175,7 +173,6 @@ class TestBuildEmail:
         result = check_alerts(_make_published(bulk_ec=BULK_EC_FAULT_VALUE, battery2=2.0))
         body = _build_body(result)
         assert "1a" in body
-        assert "site-a" in body
         assert "bulk_ec" in body
         assert "battery2=2.0" in body
 
@@ -215,9 +212,8 @@ class TestWriteAlertsToSheet:
         assert len(mock_sheets.appended_rows) == 1
         row = mock_sheets.appended_rows[0]
         assert row[2] == "sensor_fault"  # alert_type
-        assert row[3] == "site-a"        # site_id
-        assert row[4] == "1a"            # addr
-        assert row[7] == "new"           # status
+        assert row[3] == "1a"            # addr
+        assert row[6] == "new"           # status
 
     def test_writes_low_battery_rows(self):
         result = check_alerts(_make_published(battery2=2.0))
@@ -226,7 +222,7 @@ class TestWriteAlertsToSheet:
         assert n == 1
         row = mock_sheets.appended_rows[0]
         assert row[2] == "low_battery"
-        assert row[7] == "new"
+        assert row[6] == "new"
 
     def test_writes_multiple_alerts(self):
         result = check_alerts(_make_published(bulk_ec=BULK_EC_FAULT_VALUE, battery2=2.0))

@@ -69,7 +69,7 @@ class NormalizedRow:
 ### Google Sheets 列（remote-ftp: `sensor_raw` / `sensor_9am`）
 
 ```
-date | siteId | addr | number | battery1 | battery2 | bulk_ec | vwc | soil_temp | air_temp | precip_1h | sunshine_1h
+date | addr | number | battery1 | battery2 | bulk_ec | vwc | soil_temp | air_temp | precip_1h | sunshine_1h
 ```
 
 ### Google Sheets 列（mechatrax: AC〜AE）
@@ -134,7 +134,6 @@ jobs:
           FTP_SPREADSHEET_ID: ${{ secrets.FTP_SPREADSHEET_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           INGEST_FILTER_START: ${{ secrets.INGEST_FILTER_START }}
-          SITE_ID: ${{ vars.SITE_ID }}
           FTP_SITE_LATITUDE: ${{ secrets.FTP_SITE_LATITUDE }}
           FTP_SITE_LONGITUDE: ${{ secrets.FTP_SITE_LONGITUDE }}
         run: python -m scripts.ingest_ftp

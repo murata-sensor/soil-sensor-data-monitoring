@@ -119,7 +119,6 @@ function _buildBody(rows, header) {
   var tsIdx = header.indexOf('timestamp');
   var detectedIdx = header.indexOf('detected_at');
   var typeIdx = header.indexOf('alert_type');
-  var siteIdx = header.indexOf('site_id');
   var addrIdx = header.indexOf('addr');
   var numIdx = header.indexOf('sensor_number');
   var detailIdx = header.indexOf('details');
@@ -153,7 +152,6 @@ function _buildBody(rows, header) {
     for (var k = 0; k < groupRows.length; k++) {
       var r = groupRows[k];
       lines.push('  日時: ' + _cell(r, tsIdx) +
-                 '  サイト: ' + _cell(r, siteIdx) +
                  '  アドレス: ' + _cell(r, addrIdx) +
                  '  センサ番号: ' + _cell(r, numIdx));
       lines.push('  詳細: ' + _cell(r, detailIdx));

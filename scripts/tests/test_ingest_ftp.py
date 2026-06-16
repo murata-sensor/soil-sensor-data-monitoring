@@ -12,7 +12,7 @@ from scripts.ingest_ftp import (
 
 
 def test_filter_rows_newer_than_last_handles_empty_published_with_tz_aware_last():
-    published = pd.DataFrame(columns=["date", "siteId"])
+    published = pd.DataFrame(columns=["date"])
     out = _filter_rows_newer_than_last(published, "2026-06-11 08:59:41+09:00")
     assert out.empty
 
@@ -25,7 +25,6 @@ def test_filter_rows_newer_than_last_with_mixed_offsets():
                 "2026-06-11 08:59:41+09:00",
                 "2026-06-11 09:00:00+09:00",
             ],
-            "siteId": ["site-a", "site-a", "site-a"],
         }
     )
 
@@ -42,7 +41,6 @@ def test_filter_rows_newer_than_last_with_naive_last_treats_last_as_jst():
                 "2026-06-11 08:59:40+09:00",
                 "2026-06-11 09:00:00+09:00",
             ],
-            "siteId": ["site-a", "site-a"],
         }
     )
 
@@ -70,14 +68,13 @@ def test_filter_rows_not_existing_by_identity_key():
                 "2026-06-10 08:00:00+09:00",
                 "2026-06-11 08:00:00+09:00",
             ],
-            "siteId": ["site-a", "site-a"],
             "addr": ["fac", "fac"],
             "number": ["1", "1"],
             "battery1": [3.1, 3.2],
         }
     )
     existing_rows = [
-        ["2026-06-11 08:00:00+09:00", "site-a", "fac", "1"],
+        ["2026-06-11 08:00:00+09:00", "fac", "1"],
     ]
 
     out = _filter_rows_not_existing(published, existing_rows)
@@ -93,14 +90,13 @@ def test_filter_rows_not_existing_keeps_same_day_rows_for_other_keys():
                 "2026-06-11 09:05:00+09:00",
                 "2026-06-11 09:20:00+09:00",
             ],
-            "siteId": ["site-a", "site-a"],
             "addr": ["fb0", "fac"],
             "number": ["1", "1"],
             "battery1": [3.1, 3.2],
         }
     )
     existing_rows = [
-        ["2026-06-11 09:20:00+09:00", "site-a", "fac", "1"],
+        ["2026-06-11 09:20:00+09:00", "fac", "1"],
     ]
 
     out = _filter_rows_not_existing(published, existing_rows)

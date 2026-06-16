@@ -140,7 +140,6 @@ class AlertCondition:
 
     alert_type: str  # "sensor_fault" or "low_battery"
     timestamp: str
-    site_id: str
     addr: str
     sensor_number: str
     details: str
@@ -170,7 +169,7 @@ def check_alerts(published: "pd.DataFrame", rules: list[AlertRule] | None = None
 
     Args:
         published: DataFrame with columns from PUBLISHED_COLUMNS
-                   (date, siteId, addr, number, battery1, battery2, bulk_ec, vwc, ...)
+                   (date, addr, number, battery1, battery2, bulk_ec, vwc, ...)
         rules: Alert rules to evaluate. If None, uses DEFAULT_RULES.
 
     Returns:
@@ -186,7 +185,6 @@ def check_alerts(published: "pd.DataFrame", rules: list[AlertRule] | None = None
 
     for _, row in published.iterrows():
         ts = str(row.get("date", ""))
-        site_id = str(row.get("siteId", ""))
         addr = str(row.get("addr", ""))
         number = str(row.get("number", ""))
 
@@ -203,7 +201,6 @@ def check_alerts(published: "pd.DataFrame", rules: list[AlertRule] | None = None
                 result.conditions.append(AlertCondition(
                     alert_type=rule.alert_type,
                     timestamp=ts,
-                    site_id=site_id,
                     addr=addr,
                     sensor_number=number,
                     details=f"{rule.field}={cell_value} ({rule.message})",
@@ -215,7 +212,7 @@ def check_alerts(published: "pd.DataFrame", rules: list[AlertRule] | None = None
 # --- Sheets-based alert delivery (primary) ---
 
 ALERTS_SHEET = "alerts"
-ALERTS_COLUMNS = ["timestamp", "detected_at", "alert_type", "site_id", "addr", "sensor_number", "details", "status"]
+ALERTS_COLUMNS = ["timestamp", "detected_at", "alert_type", "addr", "sensor_number", "details", "status"]
 
 
 def write_alerts_to_sheet(result: AlertResult, sheets: "SheetsClient") -> int:
@@ -236,7 +233,6 @@ def write_alerts_to_sheet(result: AlertResult, sheets: "SheetsClient") -> int:
             c.timestamp,
             detected_at,
             c.alert_type,
-            c.site_id,
             c.addr,
             c.sensor_number,
             c.details,
@@ -323,7 +319,7 @@ def _build_body(result: AlertResult) -> str:
         lines.append("=" * 50)
         for c in result.sensor_faults:
             lines.append(
-                f"  日時: {c.timestamp}  サイト: {c.site_id}  "
+                f"  日時: {c.timestamp}  "
                 f"アドレス: {c.addr}  センサ番号: {c.sensor_number}"
             )
             lines.append(f"  詳細: {c.details}")
@@ -335,7 +331,7 @@ def _build_body(result: AlertResult) -> str:
         lines.append("=" * 50)
         for c in result.low_battery:
             lines.append(
-                f"  日時: {c.timestamp}  サイト: {c.site_id}  "
+                f"  日時: {c.timestamp}  "
                 f"アドレス: {c.addr}  センサ番号: {c.sensor_number}"
             )
             lines.append(f"  詳細: {c.details}")

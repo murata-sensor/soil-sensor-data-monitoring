@@ -102,10 +102,10 @@ def test_mechatrax_normalization_and_pii_drop():
 
 
 def test_remote_ftp_adapter_reads_published_columns():
-    header = ["date", "siteId", "addr", "number",
+    header = ["date", "addr", "number",
             "battery1", "battery2", "bulk_ec", "vwc", "soil_temp",
             "air_temp", "precip_1h", "sunshine_1h"]
-    row = ["2026-06-15 09:05:00+09:00", "site-a", "fac", "1",
+    row = ["2026-06-15 09:05:00+09:00", "fac", "1",
             "3.45", "2.812", "0.860", "57.5", "18.5",
             "25.3", "5.2", "0.0"]
     out = to_normalized("remote-ftp", [header, row])

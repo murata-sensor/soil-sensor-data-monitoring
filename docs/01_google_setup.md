@@ -98,7 +98,7 @@
 
 | シート名 | A1 から順に入力するヘッダ（カンマ区切り） |
 |----------|---------------------------------------------|
-| `sources` | `sourceId,displayName,schemaType,spreadsheetId,sheetName,headerRow,siteId,tz,accessMode,enabled,notes` |
+| `sources` | `sourceId,displayName,schemaType,spreadsheetId,sheetName,headerRow,tz,accessMode,enabled,notes` |
 | `users`   | `email,role,enabled` |
 | `acl`     | `email,sourceId,permission` |
 | `theme`   | `themeId,json` |
@@ -117,7 +117,6 @@
 | `spreadsheetId` | `1abcDEF...xyz` | 実データスプレッドシートの ID（URL から取得、後述） |
 | `sheetName` | `soil_sensor` | 実データが入っているタブ名 |
 | `headerRow` | `1` | 通常 `1`。ヘッダが何行目にあるか |
-| `siteId` | `site-a` | 圃場識別子（自由） |
 | `tz` | `Asia/Tokyo` | タイムゾーン |
 | `accessMode` | `direct` または `proxy` | 後述（推奨は `direct`） |
 | `enabled` | `TRUE` | `FALSE` にすると一覧から消える |
@@ -193,7 +192,7 @@ A1〜F1 にヘッダ、2 行目以降に検知条件を入力:
 A1〜H1 にヘッダのみ入力（データ行は自動追加される）:
 
 ```
-timestamp, detected_at, alert_type, site_id, addr, sensor_number, details, status
+timestamp, detected_at, alert_type, addr, sensor_number, details, status
 ```
 
 > アラートメール送信の設定は [`04_gas_setup.md`](04_gas_setup.md) のセクション C を参照。
