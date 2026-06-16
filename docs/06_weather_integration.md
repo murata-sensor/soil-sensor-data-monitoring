@@ -116,15 +116,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      
+
       - name: Install dependencies
         run: pip install -r scripts/requirements.txt
-      
+
       - name: Run FTP ingest with weather
         env:
           FTP_HOST: ${{ secrets.FTP_HOST }}
