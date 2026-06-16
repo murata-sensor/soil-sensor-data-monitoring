@@ -88,10 +88,27 @@ function doPost(e) {
     const sh = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
     if (sh.getLastRow() === 0) sh.appendRow(MX_HEADER);
     sh.appendRow(row);
+    _extendFilter(sh);
     return _mxJson({ ok: true });
   } catch (err) {
     return _mxJson({ ok: false, error: String(err) });
   }
+}
+
+/**
+ * Extends (or creates) the BasicFilter on `sh` to cover all data rows.
+ * Called after every appendRow so newly-added rows are always filtered.
+ */
+function _extendFilter(sh) {
+  const lastRow = sh.getLastRow();
+  const lastCol = sh.getLastColumn();
+  if (lastRow < 1 || lastCol < 1) return;
+  const fullRange = sh.getRange(1, 1, lastRow, lastCol);
+  const existing = sh.getFilter();
+  if (existing) {
+    existing.remove();
+  }
+  fullRange.createFilter();
 }
 
 function _num(v) {

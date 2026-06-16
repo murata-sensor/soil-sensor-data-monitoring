@@ -330,12 +330,16 @@ def main() -> int:
         published.values.tolist(),
     )
     log.info("Appended %d rows to sensor_raw", n1)
+    if n1 > 0:
+        sheets.extend_filter("sensor_raw")
 
     nine = select_nine_am(published)
     existing_nine = sheets.get_values("sensor_9am!A2:C")
     nine = _filter_rows_not_existing(nine, existing_nine)
     n2 = sheets.append_rows("sensor_9am", nine.values.tolist())
     log.info("Appended %d rows to sensor_9am", n2)
+    if n2 > 0:
+        sheets.extend_filter("sensor_9am")
 
     return 0
 

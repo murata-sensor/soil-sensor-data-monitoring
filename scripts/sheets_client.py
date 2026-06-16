@@ -64,6 +64,40 @@ class SheetsClient:
             total += int(updates.get("updatedRows", 0))
         return total
 
+    def extend_filter(self, sheet: str) -> None:
+        """Extend the BasicFilter on `sheet` to cover all current rows and columns."""
+        meta = self._svc.spreadsheets().get(
+            spreadsheetId=self.spreadsheet_id,
+            fields="sheets(properties(sheetId,title,gridProperties))",
+        ).execute()
+        sheet_meta = next(
+            (s for s in meta.get("sheets", []) if s["properties"]["title"] == sheet),
+            None,
+        )
+        if sheet_meta is None:
+            return
+        props = sheet_meta["properties"]
+        body = {
+            "requests": [
+                {
+                    "setBasicFilter": {
+                        "filter": {
+                            "range": {
+                                "sheetId": props["sheetId"],
+                                "startRowIndex": 0,
+                                "endRowIndex": props["gridProperties"]["rowCount"],
+                                "startColumnIndex": 0,
+                                "endColumnIndex": props["gridProperties"]["columnCount"],
+                            }
+                        }
+                    }
+                }
+            ]
+        }
+        self._svc.spreadsheets().batchUpdate(
+            spreadsheetId=self.spreadsheet_id, body=body
+        ).execute()
+
     def read_config(self, sheet: str = "config") -> list[dict]:
         values = self.get_values(f"{sheet}!A1:Z")
         if not values:
