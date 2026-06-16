@@ -26,9 +26,11 @@ declare global {
           initialize: (cfg: {
             client_id: string;
             callback: (resp: { credential: string }) => void;
+            auto_select?: boolean;
           }) => void;
           prompt: () => void;
           renderButton: (el: HTMLElement, opts: Record<string, unknown>) => void;
+          disableAutoSelect: () => void;
         };
       };
     };

@@ -271,7 +271,8 @@ export default function Dashboard() {
       <div className="p-10 text-center">
         <p className="mb-4 text-slate-700">
           Google スプレッドシートへのアクセス許可が必要です。<br />
-          下のボタンをクリックして許可してください。
+          下のボタンをクリックして許可してください。<br />
+          <span className="text-xs text-slate-500">（初回のみ。次回以降は自動で接続します）</span>
         </p>
         <button
           className="px-6 py-2 rounded bg-blue-600 text-white font-semibold hover:bg-blue-700"

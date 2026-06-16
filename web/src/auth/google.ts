@@ -6,7 +6,8 @@
  * - `getAccessToken()` requests an OAuth access token with the sheets.readonly
  *   scope used to read the spreadsheet directly from the browser.
  *
- * Sessions are persisted in sessionStorage so users don't have to re-auth on reload.
+ * Sessions are persisted in localStorage so users stay signed in across
+ * browser restarts.  Access tokens are refreshed silently when possible.
  */
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -15,9 +16,13 @@ const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
 const STORAGE_KEY_USER = "soil_user";
 const STORAGE_KEY_TOKEN = "soil_access_token";
 const STORAGE_KEY_EXPIRY = "soil_access_token_expiry";
+const STORAGE_KEY_LOGIN_AT = "soil_login_at";
 
-let accessToken: string | null = sessionStorage.getItem(STORAGE_KEY_TOKEN);
-let accessTokenExpiry = Number(sessionStorage.getItem(STORAGE_KEY_EXPIRY) || "0");
+/** Max days to keep the session alive without re-authentication. */
+const SESSION_MAX_DAYS = 30;
+
+let accessToken: string | null = localStorage.getItem(STORAGE_KEY_TOKEN);
+let accessTokenExpiry = Number(localStorage.getItem(STORAGE_KEY_EXPIRY) || "0");
 
 export interface SignedInUser {
   email: string;
@@ -26,33 +31,48 @@ export interface SignedInUser {
   idToken: string;
 }
 
-/** Restore user session from sessionStorage if still valid. */
+/** Restore user session from localStorage if still valid (up to SESSION_MAX_DAYS). */
 export function restoreSession(): SignedInUser | null {
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY_USER);
+    const raw = localStorage.getItem(STORAGE_KEY_USER);
     if (!raw) return null;
-    const u = JSON.parse(raw) as SignedInUser;
-    // Check JWT not expired
-    const payload = decodeJwt(u.idToken) as { exp?: number };
-    if (payload.exp && payload.exp * 1000 < Date.now()) {
-      sessionStorage.removeItem(STORAGE_KEY_USER);
+    const loginAt = Number(localStorage.getItem(STORAGE_KEY_LOGIN_AT) || "0");
+    if (loginAt && Date.now() - loginAt > SESSION_MAX_DAYS * 86_400_000) {
+      // Session too old – force re-authentication
+      localStorage.removeItem(STORAGE_KEY_USER);
+      localStorage.removeItem(STORAGE_KEY_LOGIN_AT);
       return null;
     }
-    return u;
+    return JSON.parse(raw) as SignedInUser;
   } catch {
+    localStorage.removeItem(STORAGE_KEY_USER);
     return null;
   }
 }
 
-/** Persist user to sessionStorage. */
+/** Check if the stored ID token JWT is expired. */
+export function isIdTokenExpired(u: SignedInUser): boolean {
+  try {
+    const payload = decodeJwt(u.idToken) as { exp?: number };
+    return !!(payload.exp && payload.exp * 1000 < Date.now());
+  } catch {
+    return true;
+  }
+}
+
+/** Persist user to localStorage. */
 function saveSession(u: SignedInUser): void {
-  sessionStorage.setItem(STORAGE_KEY_USER, JSON.stringify(u));
+  localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(u));
+  // Only set login timestamp on first login (not on token refresh)
+  if (!localStorage.getItem(STORAGE_KEY_LOGIN_AT)) {
+    localStorage.setItem(STORAGE_KEY_LOGIN_AT, String(Date.now()));
+  }
 }
 
 function saveAccessToken(): void {
   if (accessToken) {
-    sessionStorage.setItem(STORAGE_KEY_TOKEN, accessToken);
-    sessionStorage.setItem(STORAGE_KEY_EXPIRY, String(accessTokenExpiry));
+    localStorage.setItem(STORAGE_KEY_TOKEN, accessToken);
+    localStorage.setItem(STORAGE_KEY_EXPIRY, String(accessTokenExpiry));
   }
 }
 
@@ -73,6 +93,46 @@ export function renderSignInButton(el: HTMLElement, onUser: (u: SignedInUser) =>
     setTimeout(() => renderSignInButton(el, onUser), 200);
     return;
   }
+
+  const handleCredential = (credential: string) => {
+    const payload = decodeJwt(credential) as {
+      email?: string; name?: string; picture?: string;
+    };
+    if (!payload.email) return;
+    const u: SignedInUser = {
+      email: payload.email,
+      name: payload.name,
+      picture: payload.picture,
+      idToken: credential,
+    };
+    saveSession(u);
+    // Immediately request OAuth token so user doesn't need a separate consent click.
+    // Use empty prompt for silent refresh; falls back to consent popup if needed.
+    requestToken("").catch(() => {
+      // Silent refresh failed – will be handled when Dashboard tries getAccessToken()
+    });
+    onUser(u);
+  };
+
+  window.google.accounts.id.initialize({
+    client_id: CLIENT_ID,
+    callback: (resp) => handleCredential(resp.credential),
+    auto_select: true, // Enable auto-select for returning users (One Tap)
+  });
+
+  // Show One Tap prompt for returning users (no click needed)
+  window.google.accounts.id.prompt();
+
+  // Also render the button as fallback
+  window.google.accounts.id.renderButton(el, { theme: "outline", size: "large" });
+}
+
+/**
+ * Silently refresh the ID token using Google One Tap auto_select.
+ * Returns the updated user or null if silent refresh is not possible.
+ */
+export function refreshIdToken(onRefreshed: (u: SignedInUser) => void): void {
+  if (!window.google) return;
   window.google.accounts.id.initialize({
     client_id: CLIENT_ID,
     callback: (resp) => {
@@ -87,10 +147,12 @@ export function renderSignInButton(el: HTMLElement, onUser: (u: SignedInUser) =>
         idToken: resp.credential,
       };
       saveSession(u);
-      onUser(u);
+      onRefreshed(u);
     },
+    auto_select: true,
   });
-  window.google.accounts.id.renderButton(el, { theme: "outline", size: "large" });
+  // Trigger One Tap silently; if Google session is active it will auto-select
+  window.google.accounts.id.prompt();
 }
 
 export class ConsentRequiredError extends Error {
@@ -103,7 +165,14 @@ export class ConsentRequiredError extends Error {
 export async function getAccessToken(): Promise<string> {
   if (accessToken && Date.now() < accessTokenExpiry - 60_000) return accessToken;
   if (!window.google) throw new Error("Google Identity Services not loaded");
-  return requestToken("");
+  // Try silent refresh first (no popup if consent was already granted)
+  try {
+    return await requestToken("");
+  } catch (e) {
+    if (e instanceof ConsentRequiredError) throw e;
+    // Unknown error – re-throw as consent required so UI can handle it
+    throw new ConsentRequiredError();
+  }
 }
 
 /** Call from a click handler to grant Sheets access with explicit user gesture. */
@@ -123,9 +192,10 @@ export function signOut(): void {
   const tokenToRevoke = accessToken;
   accessToken = null;
   accessTokenExpiry = 0;
-  sessionStorage.removeItem(STORAGE_KEY_USER);
-  sessionStorage.removeItem(STORAGE_KEY_TOKEN);
-  sessionStorage.removeItem(STORAGE_KEY_EXPIRY);
+  localStorage.removeItem(STORAGE_KEY_USER);
+  localStorage.removeItem(STORAGE_KEY_TOKEN);
+  localStorage.removeItem(STORAGE_KEY_EXPIRY);
+  localStorage.removeItem(STORAGE_KEY_LOGIN_AT);
 
   try {
     googleAny.accounts?.id?.disableAutoSelect?.();
