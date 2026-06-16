@@ -258,7 +258,7 @@ export async function getSheetNames(spreadsheetId: string): Promise<string[]> {
   };
   const names = (json.sheets ?? [])
     .map((s) => s.properties?.title ?? "")
-    .filter((name) => name && !name.startsWith("_"));
+    .filter((name) => name && !name.startsWith("_") && name !== "alerts" && name !== "alert_rules");
   return names;
 }
 
