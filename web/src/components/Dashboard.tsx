@@ -10,7 +10,7 @@ import { ResponsiveGridLayout, useContainerWidth, type Layout, type LayoutItem }
 import "react-grid-layout/css/styles.css";
 import {
   loadAllRegistry, loadDataSource, getSheetNames,
-  resolveAllowedSources, RegistryAccessDeniedError, UserNotRegisteredError,
+  resolveAllowedSources, canAccessSource, RegistryAccessDeniedError, UserNotRegisteredError,
 } from "../api/sheets";
 import { useApp } from "../store";
 import {
@@ -84,6 +84,7 @@ export default function Dashboard() {
   const [rows, setRows] = useState<NormalizedRow[] | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [layouts, setLayouts] = useState<LayoutConfig[]>([]);
+  const [registryLoading, setRegistryLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unregistered, setUnregistered] = useState(false);
@@ -110,6 +111,7 @@ export default function Dashboard() {
 
   const loadRegistry = async () => {
     if (!user) return;
+    setRegistryLoading(true);
     setNeedsConsent(false); setError(null);
     try {
       const { sources: src, users, acl, events: ev, theme: t, layouts: lays } =
@@ -119,10 +121,22 @@ export default function Dashboard() {
       const me = users.find((u) => u.email.toLowerCase() === user.email.toLowerCase());
       if (!me || !me.enabled) { setUnregistered(true); return; }
       setIsAdmin(me.role === "admin");
-      const list = resolveAllowedSources(user.email, src, users, acl);
+      const candidates = resolveAllowedSources(user.email, src, users, acl);
+      const accessResults = await Promise.all(
+        candidates.map(async (source) => {
+          const accessible = await canAccessSource(source, user.idToken, {
+            sheetNameOverride: source.schemaType === "remote-ftp" ? ftpSheetName : undefined,
+          });
+          return { source, accessible };
+        }),
+      );
+      const list = accessResults
+        .filter((r) => r.accessible)
+        .map((r) => r.source);
       setAllowed(list);
-      if (list.length && !selectedSourceId) {
-        setSelectedSource(list[0]);
+      const selectedStillAvailable = list.some((s) => s.sourceId === selectedSourceId);
+      if (!selectedStillAvailable) {
+        setSelectedSource(list.length ? list[0] : null);
       }
     } catch (e) {
       if (e instanceof ConsentRequiredError) {
@@ -134,10 +148,12 @@ export default function Dashboard() {
       } else {
         setError(String(e));
       }
+    } finally {
+      setRegistryLoading(false);
     }
   };
 
-  useEffect(() => { loadRegistry(); }, [user, setTheme, setSelectedSource, selectedSourceId]);
+  useEffect(() => { loadRegistry(); }, [user, setTheme, setSelectedSource, selectedSourceId, ftpSheetName]);
 
   useEffect(() => {
     if (!user || !selectedSourceId) {
@@ -243,7 +259,20 @@ export default function Dashboard() {
 
   const showAirTemperature = settings?.showAirTemperature ?? false;
   const showEventLabels = settings?.showEventLabels ?? true;
-  const isDataLoading = Boolean(selected && (loading || rows === null));
+  const isInitialUnresolved = Boolean(user && rows === null && !selectedSourceId);
+  const isResolvingSource = Boolean(user && !registryLoading && allowed.length > 0 && !selectedSourceId);
+  const isSourceSelectedButUnresolved = Boolean(user && selectedSourceId && !selected);
+  const isDataLoading = Boolean(
+    user
+    && (
+      isInitialUnresolved
+      || registryLoading
+      || isResolvingSource
+      || isSourceSelectedButUnresolved
+      || loading
+      || (selectedSourceId !== null && rows === null)
+    )
+  );
 
   const visiblePanels = useMemo(
     () => panels.filter((p) => showAirTemperature || p.metric !== "air_temp_c"),
@@ -349,7 +378,10 @@ export default function Dashboard() {
               <label className="text-slate-600 shrink-0 text-xs sm:text-sm">データソース：</label>
               <select
                 value={selectedSourceId || ""}
-                onChange={(e) => setSelectedSource(e.target.value || null)}
+                onChange={(e) => {
+                  setRows(null);
+                  setSelectedSource(e.target.value || null);
+                }}
                 className="border rounded px-2 py-1 bg-white text-xs sm:text-sm min-w-0 sm:min-w-[14rem]"
               >
                 {allowed.length === 0 && <option value="">(アクセス可能なソースなし)</option>}
