@@ -262,6 +262,30 @@ export async function getSheetNames(spreadsheetId: string): Promise<string[]> {
   return names;
 }
 
+/**
+ * Check whether the current user can read a source sheet.
+ * Uses a minimal range read to avoid loading full datasets.
+ */
+export async function canAccessSource(
+  source: SourceRow,
+  idToken?: string,
+  options?: { sheetNameOverride?: string },
+): Promise<boolean> {
+  try {
+    const sheetName = (options?.sheetNameOverride || source.sheetName).trim();
+    const headerRow = Math.max(1, Number(source.headerRow) || 1);
+    if (source.accessMode === "proxy") {
+      await readProxy(source, idToken || "", sheetName);
+      return true;
+    }
+    await sheetsGet(source.spreadsheetId, `${sheetName}!A${headerRow}:A${headerRow}`);
+    return true;
+  } catch (e) {
+    if (e instanceof RegistryAccessDeniedError) return false;
+    throw e;
+  }
+}
+
 async function readDirect(src: SourceRow, sheetNameOverride?: string): Promise<string[][]> {
   // Read from headerRow downwards so the adapter receives the header as row 0.
   const sheetName = (sheetNameOverride || src.sheetName).trim();
