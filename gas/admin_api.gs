@@ -14,7 +14,7 @@
  * The caller's email (from ID token) must be in ADMIN_ALLOWED_EMAILS Script Property.
  */
 
-const ADMIN_SHEETS = ['sources', 'users', 'acl', 'theme', 'events', 'layouts'];
+const ADMIN_SHEETS = ['sources', 'users', 'acl', 'theme', 'layouts'];
 
 function doPost(e) {
   try {

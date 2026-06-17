@@ -4,7 +4,7 @@ import { adminGetSheet, adminPutRows, adminSaveTheme } from "../api/admin";
 import type { Theme } from "../types";
 import { signOut } from "../auth/google";
 
-const SHEETS = ["sources", "users", "acl", "events"] as const;
+const SHEETS = ["sources", "users", "acl"] as const;
 type Sheet = typeof SHEETS[number];
 
 export default function AdminPanel() {

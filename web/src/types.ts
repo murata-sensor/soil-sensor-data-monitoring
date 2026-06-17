@@ -32,7 +32,6 @@ export interface SourceRow {
 
 export interface EventRow {
   date: string;
-  sourceId: string;
   label: string;
   color?: string;
   /** If set, show only on panels for this specific deviceId. Omit for global (all devices). */

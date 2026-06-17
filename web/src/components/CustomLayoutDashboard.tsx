@@ -357,13 +357,28 @@ function ChartPanel({
   const annotations = useMemo(() => {
     if (panel.showEvents === false || panel.metric === "air_temp_c") return {};
     const deviceFilter = resolved.deviceFilter;
+
+    // Determine data time range from datasets to exclude out-of-range events
+    let dataMin = Infinity;
+    let dataMax = -Infinity;
+    for (const ds of datasets) {
+      for (const pt of ds.data) {
+        if (pt.x < dataMin) dataMin = pt.x;
+        if (pt.x > dataMax) dataMax = pt.x;
+      }
+    }
+
     // Show event if: no deviceId (global) OR deviceId matches this panel's device filter
-    const visibleEvents = events.filter((e) =>
-      !e.deviceId || !deviceFilter?.length || deviceFilter.includes(e.deviceId),
-    );
+    const visibleEvents = events.filter((e) => {
+      if (e.deviceId && deviceFilter?.length && !deviceFilter.includes(e.deviceId)) return false;
+      // Exclude events outside the data time range
+      const ts = parseTs(e.date);
+      if (!Number.isFinite(dataMin) || !Number.isFinite(dataMax)) return false;
+      return ts >= dataMin && ts <= dataMax;
+    });
+
     return Object.fromEntries(
       visibleEvents.map((e, i) => {
-        // Support both date-only ("2025-07-15") and datetime ("2025-07-15T10:30+09:00")
         const ts = parseTs(e.date);
         return [
           `ev-${i}`,
@@ -389,7 +404,7 @@ function ChartPanel({
         ];
       }),
     );
-  }, [events, panel.showEvents, panel.metric, resolved.deviceFilter, showEventLabels]);
+  }, [events, panel.showEvents, panel.metric, resolved.deviceFilter, datasets, showEventLabels]);
 
   const yMin = panelSettings?.yMin ?? (panel.metric === "battery_v" ? 3.0 : panel.yMin);
   const yMax = panelSettings?.yMax ?? (panel.metric === "battery_v" ? 3.6 : panel.yMax);

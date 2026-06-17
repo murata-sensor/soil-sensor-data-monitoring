@@ -46,10 +46,11 @@ function doPost(e) {
     if (!src) return _proxyJson({ ok: false, error: 'unknown sourceId' });
 
     const remote = SpreadsheetApp.openById(src.spreadsheetId);
-    const sh = remote.getSheetByName(src.sheetName);
+    var sheetName = body.sheetName ? String(body.sheetName).trim() : src.sheetName;
+    const sh = remote.getSheetByName(sheetName);
     if (!sh) return _proxyJson({ ok: false, error: 'sheetName not found' });
-    // headerRow downwards
-    const headerRow = Number(src.headerRow) || 1;
+    // Use headerRow from source config only for the main data sheet; override sheets start at row 1
+    const headerRow = body.sheetName ? 1 : (Number(src.headerRow) || 1);
     const last = sh.getLastRow();
     if (last < headerRow) return _proxyJson({ ok: true, values: [] });
     const values = sh.getRange(headerRow, 1, last - headerRow + 1, sh.getLastColumn())
@@ -62,7 +63,7 @@ function doPost(e) {
 }
 
 /**
- * Registry read: returns sources, users, acl, events, theme, layouts
+ * Registry read: returns sources, users, acl, theme, layouts
  * for any authenticated user. ACL enforcement still happens client-side
  * (resolveAllowedSources) and server-side for actual data reads.
  */
@@ -82,7 +83,6 @@ function _handleRegistryRead(email) {
     sources: _proxySheetValues(ss, 'sources'),
     users: _proxySheetValues(ss, 'users'),
     acl: _proxySheetValues(ss, 'acl'),
-    events: _proxySheetValues(ss, 'events'),
     theme: _proxySheetValues(ss, 'theme'),
     layouts: _proxySheetValues(ss, 'layouts'),
   };
