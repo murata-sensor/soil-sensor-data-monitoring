@@ -30,6 +30,7 @@ node_modules/
 web/dist/
 web/.vite/
 web/coverage/
+web/tsconfig.tsbuildinfo
 .eslintcache
 
 # Editor / OS
