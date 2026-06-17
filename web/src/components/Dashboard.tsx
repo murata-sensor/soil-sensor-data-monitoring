@@ -81,7 +81,7 @@ export default function Dashboard() {
   const { user, theme, setUser, setTheme, selectedSourceId, setSelectedSource } = useApp();
   const [, setSources] = useState<SourceRow[]>([]);
   const [allowed, setAllowed] = useState<SourceRow[]>([]);
-  const [rows, setRows] = useState<NormalizedRow[]>([]);
+  const [rows, setRows] = useState<NormalizedRow[] | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [layouts, setLayouts] = useState<LayoutConfig[]>([]);
   const [loading, setLoading] = useState(false);
@@ -140,15 +140,25 @@ export default function Dashboard() {
   useEffect(() => { loadRegistry(); }, [user, setTheme, setSelectedSource, selectedSourceId]);
 
   useEffect(() => {
-    if (!user || !selectedSourceId) return;
+    if (!user || !selectedSourceId) {
+      setRows(null);
+      return;
+    }
     const src = allowed.find((s) => s.sourceId === selectedSourceId);
-    if (!src) return;
+    if (!src) {
+      setRows(null);
+      return;
+    }
     setLoading(true); setError(null);
+    setRows(null);
     loadDataSource(src, user.idToken, {
       sheetNameOverride: src.schemaType === "remote-ftp" ? ftpSheetName : undefined,
     })
       .then((r) => setRows(r.rows))
-      .catch((e) => setError(String(e)))
+      .catch((e) => {
+        setRows([]);
+        setError(String(e));
+      })
       .finally(() => setLoading(false));
   }, [user, allowed, selectedSourceId, ftpSheetName]);
 
@@ -180,7 +190,7 @@ export default function Dashboard() {
 
   // Filter rows by date range
   const filteredRows = useMemo(() => {
-    if (!settings) return rows;
+    if (!rows || !settings) return rows ?? [];
     const range = dateRangeToMs(settings.dateRange);
     if (!range) return rows;
     return rows.filter((r) => {
@@ -233,6 +243,7 @@ export default function Dashboard() {
 
   const showAirTemperature = settings?.showAirTemperature ?? false;
   const showEventLabels = settings?.showEventLabels ?? true;
+  const isDataLoading = Boolean(selected && (loading || rows === null));
 
   const visiblePanels = useMemo(
     () => panels.filter((p) => showAirTemperature || p.metric !== "air_temp_c"),
@@ -249,6 +260,12 @@ export default function Dashboard() {
       ),
     };
   }, [customLayout, showAirTemperature]);
+
+  const skeletonCount = useMemo(() => {
+    if (visibleCustomLayout) return visibleCustomLayout.panels.length;
+    if (customLayout) return customLayout.panels.length;
+    return visiblePanels.length;
+  }, [visibleCustomLayout, customLayout, visiblePanels]);
 
   // Layout for react-grid-layout
   const defaultLayout = useMemo<LayoutItem[]>(
@@ -416,10 +433,17 @@ export default function Dashboard() {
       {error && (
         <div className="m-4 p-3 rounded bg-rose-100 text-rose-700 text-sm">{error}</div>
       )}
-      {loading && <div className="m-4 text-sm text-slate-500">読み込み中…</div>}
+      {isDataLoading && (
+        <div className="m-4 inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-sky-500" />
+          データを読み込み中…
+        </div>
+      )}
 
       <main className="p-2 sm:p-4">
-        {customLayout ? (
+        {isDataLoading ? (
+          <DashboardSkeleton count={skeletonCount} />
+        ) : customLayout ? (
           <CustomLayoutDashboard
             layout={visibleCustomLayout || customLayout}
             rows={filteredRows}
@@ -452,6 +476,36 @@ export default function Dashboard() {
           onResetLayout={() => updateSettings({ layout: null })}
         />
       )}
+    </div>
+  );
+}
+
+function DashboardSkeleton({ count }: { count: number }) {
+  const cardCount = Math.min(Math.max(count, 4), 8);
+
+  return (
+    <div
+      className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      {Array.from({ length: cardCount }).map((_, i) => (
+        <section
+          key={`skeleton-${i}`}
+          className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow"
+        >
+          <div className="space-y-3 p-3">
+            <div className="h-4 w-32 animate-pulse rounded bg-slate-200" />
+            <div className="h-36 animate-pulse rounded-xl bg-slate-100" />
+            <div className="grid grid-cols-3 gap-2">
+              <div className="h-2 animate-pulse rounded bg-slate-100" />
+              <div className="h-2 animate-pulse rounded bg-slate-100" />
+              <div className="h-2 animate-pulse rounded bg-slate-100" />
+            </div>
+          </div>
+        </section>
+      ))}
     </div>
   );
 }
