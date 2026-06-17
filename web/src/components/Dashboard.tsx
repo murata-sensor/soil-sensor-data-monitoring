@@ -9,7 +9,7 @@ import "chartjs-adapter-date-fns";
 import { ResponsiveGridLayout, useContainerWidth, type Layout, type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import {
-  loadAllRegistry, loadDataSource, getSheetNames,
+  loadAllRegistry, loadDataSource, loadSourceEvents, getSheetNames,
   resolveAllowedSources, canAccessSource, RegistryAccessDeniedError, UserNotRegisteredError,
 } from "../api/sheets";
 import { useApp } from "../store";
@@ -114,9 +114,9 @@ export default function Dashboard() {
     setRegistryLoading(true);
     setNeedsConsent(false); setError(null);
     try {
-      const { sources: src, users, acl, events: ev, theme: t, layouts: lays } =
+      const { sources: src, users, acl, theme: t, layouts: lays } =
         await loadAllRegistry(user.idToken);
-      setSources(src); setEvents(ev); setLayouts(lays);
+      setSources(src); setLayouts(lays);
       if (t) setTheme(t);
       const me = users.find((u) => u.email.toLowerCase() === user.email.toLowerCase());
       if (!me || !me.enabled) { setUnregistered(true); return; }
@@ -158,21 +158,27 @@ export default function Dashboard() {
   useEffect(() => {
     if (!user || !selectedSourceId) {
       setRows(null);
+      setEvents([]);
       return;
     }
     const src = allowed.find((s) => s.sourceId === selectedSourceId);
     if (!src) {
       setRows(null);
+      setEvents([]);
       return;
     }
     setLoading(true); setError(null);
     setRows(null);
-    loadDataSource(src, user.idToken, {
-      sheetNameOverride: src.schemaType === "remote-ftp" ? ftpSheetName : undefined,
-    })
-      .then((r) => setRows(r.rows))
+    Promise.all([
+      loadDataSource(src, user.idToken, {
+        sheetNameOverride: src.schemaType === "remote-ftp" ? ftpSheetName : undefined,
+      }),
+      loadSourceEvents(src, user.idToken),
+    ])
+      .then(([r, ev]) => { setRows(r.rows); setEvents(ev); })
       .catch((e) => {
         setRows([]);
+        setEvents([]);
         setError(String(e));
       })
       .finally(() => setLoading(false));
@@ -200,7 +206,7 @@ export default function Dashboard() {
   }, [selected, theme.panels]);
 
   const visibleEvents = useMemo(
-    () => (selected ? events.filter((e) => e.sourceId === selected.sourceId) : []),
+    () => (selected ? events : []),
     [selected, events],
   );
 
@@ -603,26 +609,43 @@ function Panel({ panel, rows, events, colors, panelSettings, deviceColors, showE
     () => buildDatasets(panel, rows, colors, deviceColors),
     [panel, rows, colors, deviceColors],
   );
-  const annotations = useMemo(() => events
-    .filter((e) => !e.deviceId) // non-custom panels have no device context; skip per-device events
-    .map((e, i) => ({
-    [`ev-${i}`]: {
-      type: "line" as const, xMin: parseTs(e.date), xMax: parseTs(e.date),
-      borderColor: e.color || "#ef4444", borderWidth: 1,
-      borderDash: [4, 2],
-      label: {
-        content: e.label,
-        display: showEventLabels,
-        position: "start" as const,
-        xAdjust: 6,
-        yAdjust: getEventLabelYAdjust(),
-        backgroundColor: "rgba(0,0,0,0.72)",
-        color: "#fff",
-        font: { size: 9 },
-        padding: 2,
-      },
-    },
-  })).reduce((acc, cur) => ({ ...acc, ...cur }), {}), [events, showEventLabels]);
+  const annotations = useMemo(() => {
+    // Determine data time range from datasets to exclude out-of-range events
+    let dataMin = Infinity;
+    let dataMax = -Infinity;
+    for (const ds of datasets) {
+      for (const pt of ds.data as { x: number }[]) {
+        if (pt.x < dataMin) dataMin = pt.x;
+        if (pt.x > dataMax) dataMax = pt.x;
+      }
+    }
+
+    return events
+      .filter((e) => {
+        if (e.deviceId) return false; // non-custom panels have no device context; skip per-device events
+        const ts = parseTs(e.date);
+        if (!Number.isFinite(dataMin) || !Number.isFinite(dataMax)) return false;
+        return ts >= dataMin && ts <= dataMax;
+      })
+      .map((e, i) => ({
+        [`ev-${i}`]: {
+          type: "line" as const, xMin: parseTs(e.date), xMax: parseTs(e.date),
+          borderColor: e.color || "#ef4444", borderWidth: 1,
+          borderDash: [4, 2],
+          label: {
+            content: e.label,
+            display: showEventLabels,
+            position: "start" as const,
+            xAdjust: 6,
+            yAdjust: getEventLabelYAdjust(),
+            backgroundColor: "rgba(0,0,0,0.72)",
+            color: "#fff",
+            font: { size: 9 },
+            padding: 2,
+          },
+        },
+      })).reduce((acc, cur) => ({ ...acc, ...cur }), {});
+  }, [events, datasets, showEventLabels]);
 
   const shouldShowEvents = panel.metric !== "air_temp_c";
 

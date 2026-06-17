@@ -1,9 +1,10 @@
 /**
  * Sheets API access layer.
  *
- * - `readRegistry()` reads the registry spreadsheet (sources/users/acl/theme/events/layouts).
+ * - `readRegistry()` reads the registry spreadsheet (sources/users/acl/theme/layouts).
  * - `loadDataSource(source)` reads one data-source spreadsheet via direct or proxy
  *   mode and runs the matching schema adapter.
+ * - `loadSourceEvents(source)` reads events from the data-source spreadsheet's `events` tab.
  */
 
 import { getAccessToken } from "../auth/google";
@@ -73,7 +74,6 @@ export interface RegistryData {
   sources: SourceRow[];
   users: UserRow[];
   acl: AclRow[];
-  events: EventRow[];
   theme: Theme | null;
   layouts: LayoutConfig[];
 }
@@ -85,10 +85,10 @@ export interface RegistryData {
  */
 export async function loadAllRegistry(idToken: string): Promise<RegistryData> {
   try {
-    const [src, users, acl, ev, t, lays] = await Promise.all([
-      loadSources(), loadUsers(), loadAcl(), loadEvents(), loadTheme(), loadLayouts(),
+    const [src, users, acl, t, lays] = await Promise.all([
+      loadSources(), loadUsers(), loadAcl(), loadTheme(), loadLayouts(),
     ]);
-    return { sources: src, users, acl, events: ev, theme: t, layouts: lays };
+    return { sources: src, users, acl, theme: t, layouts: lays };
   } catch (e) {
     if (e instanceof RegistryAccessDeniedError && PROXY_URL) {
       return loadRegistryViaProxy(idToken);
@@ -110,7 +110,6 @@ async function loadRegistryViaProxy(idToken: string): Promise<RegistryData> {
     sources?: string[][];
     users?: string[][];
     acl?: string[][];
-    events?: string[][];
     theme?: string[][];
     layouts?: string[][];
   };
@@ -124,7 +123,6 @@ async function loadRegistryViaProxy(idToken: string): Promise<RegistryData> {
     sources: parseSources(toObjects<Record<string, string>>(json.sources ?? [])),
     users: parseUsers(toObjects<Record<string, string>>(json.users ?? [])),
     acl: parseAcl(toObjects<Record<string, string>>(json.acl ?? [])),
-    events: parseEvents(toObjects<Record<string, string>>(json.events ?? [])),
     theme: parseTheme(json.theme ?? []),
     layouts: parseLayouts(json.layouts ?? []),
   };
@@ -184,19 +182,32 @@ function parseAcl(raw: Record<string, string>[]): AclRow[] {
   })).filter((a) => a.email && a.sourceId);
 }
 
-export async function loadEvents(): Promise<EventRow[]> {
-  const raw = toObjects<Record<string, string>>(await readRegistry("events!A1:Z"));
-  return parseEvents(raw);
-}
-
 function parseEvents(raw: Record<string, string>[]): EventRow[] {
   return raw.map((r) => ({
     date: r.date,
-    sourceId: r.sourceId,
     label: r.label,
     color: r.color || undefined,
     deviceId: r.deviceId ? r.deviceId.trim() : undefined,
-  })).filter((e) => e.date && e.sourceId);
+  })).filter((e) => e.date && e.label);
+}
+
+/**
+ * Load events from a data-source spreadsheet's `events` sheet.
+ * Returns [] if the sheet does not exist.
+ */
+export async function loadSourceEvents(
+  source: SourceRow,
+  idToken?: string,
+): Promise<EventRow[]> {
+  try {
+    const values = source.accessMode === "proxy"
+      ? await readProxy(source, idToken || "", "events")
+      : await sheetsGet(source.spreadsheetId, "events!A1:Z");
+    return parseEvents(toObjects<Record<string, string>>(values));
+  } catch {
+    // events tab may not exist — that's fine
+    return [];
+  }
 }
 
 export async function loadTheme(): Promise<Theme | null> {
@@ -258,7 +269,7 @@ export async function getSheetNames(spreadsheetId: string): Promise<string[]> {
   };
   const names = (json.sheets ?? [])
     .map((s) => s.properties?.title ?? "")
-    .filter((name) => name && !name.startsWith("_") && name !== "alerts" && name !== "alert_rules");
+    .filter((name) => name && !name.startsWith("_") && name !== "alerts" && name !== "alert_rules" && name !== "events");
   return names;
 }
 
