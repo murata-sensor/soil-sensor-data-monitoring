@@ -94,6 +94,7 @@ export default function Dashboard() {
   const [settings, setSettingsState] = useState<UserSettings | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [sheetNames, setSheetNames] = useState<string[]>([]);
+  const [customLayoutResetKey, setCustomLayoutResetKey] = useState(0);
 
   const updateSettings = useCallback((patch: Partial<UserSettings>) => {
     if (!user || !settings) return;
@@ -318,6 +319,11 @@ export default function Dashboard() {
     });
   }, [settings, updateSettings]);
 
+  const handleResetLayout = useCallback(() => {
+    updateSettings({ layout: null });
+    setCustomLayoutResetKey((k) => k + 1);
+  }, [updateSettings]);
+
   if (needsConsent) {
     return (
       <div className="p-10 text-center">
@@ -483,6 +489,7 @@ export default function Dashboard() {
           <DashboardSkeleton count={skeletonCount} />
         ) : customLayout ? (
           <CustomLayoutDashboard
+            key={`custom-layout-${selectedSourceId ?? "none"}-${customLayoutResetKey}`}
             layout={visibleCustomLayout || customLayout}
             rows={filteredRows}
             events={visibleEvents}
@@ -511,7 +518,7 @@ export default function Dashboard() {
           rows={filteredRows}
           onSave={(s) => { updateSettings(s); setShowSettings(false); }}
           onClose={() => setShowSettings(false)}
-          onResetLayout={() => updateSettings({ layout: null })}
+          onResetLayout={handleResetLayout}
         />
       )}
     </div>
