@@ -5,7 +5,7 @@
  * using react-grid-layout for positioning. This supports per-source custom layouts
  * like the Kashimadai column-per-device style.
  */
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState, useRef, useEffect } from "react";
 import { Line } from "react-chartjs-2";
 import { ResponsiveGridLayout, useContainerWidth, type Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
@@ -50,6 +50,9 @@ interface CustomLayoutProps {
   bgColor?: string;
   chartBgColor?: string;
   onLayoutChange?: (panels: LayoutPanel[]) => void;
+  textOverrides?: Record<string, string>;
+  onTextEdit?: (panelId: string, content: string) => void;
+  onRemoveTextPanel?: (panelId: string) => void;
 }
 
 export function CustomLayoutDashboard({
@@ -62,6 +65,9 @@ export function CustomLayoutDashboard({
   bgColor,
   chartBgColor,
   onLayoutChange,
+  textOverrides,
+  onTextEdit,
+  onRemoveTextPanel,
 }: CustomLayoutProps) {
   const { width, containerRef } = useContainerWidth();
   const cols = layout.cols ?? 12;
@@ -164,6 +170,9 @@ export function CustomLayoutDashboard({
                 devices={layout.devices}
                 deviceLabels={layout.deviceLabels ?? layout.devices}
                 showEventLabels={showEventLabels}
+                textOverrides={textOverrides}
+                onTextEdit={onTextEdit}
+                onRemoveTextPanel={onRemoveTextPanel}
               />
             </div>
           ))}
@@ -186,6 +195,9 @@ function PanelRenderer({
   devices,
   deviceLabels,
   showEventLabels,
+  textOverrides,
+  onTextEdit,
+  onRemoveTextPanel,
 }: {
   panel: LayoutPanel;
   rows: NormalizedRow[];
@@ -197,16 +209,28 @@ function PanelRenderer({
   devices?: string[];
   deviceLabels?: string[];
   showEventLabels: boolean;
+  textOverrides?: Record<string, string>;
+  onTextEdit?: (panelId: string, content: string) => void;
+  onRemoveTextPanel?: (panelId: string) => void;
 }) {
   switch (panel.type) {
     case "text":
-      return <TextPanel panel={panel} textColor={textColor} deviceLabels={deviceLabels} />;
+      return (
+        <TextPanel
+          panel={panel}
+          textColor={textColor}
+          deviceLabels={deviceLabels}
+          overrideContent={textOverrides?.[panel.id]}
+          onEdit={onTextEdit}
+          onRemove={onRemoveTextPanel}
+        />
+      );
     case "image":
       return <ImagePanel panel={panel} surface={surface} />;
     case "gauge":
       return <GaugePanel panel={panel} rows={rows} surface={surface} textColor={textColor} devices={devices} />;
-    case "chart":
-      return (
+    case "chart": {
+      const chart = (
         <ChartPanel
           panel={panel}
           rows={rows}
@@ -219,18 +243,108 @@ function PanelRenderer({
           showEventLabels={showEventLabels}
         />
       );
+      if (panel.id.startsWith("user-chart-") && onRemoveTextPanel) {
+        return (
+          <div className="group relative h-full">
+            {chart}
+            <div className="absolute top-1 right-1 hidden group-hover:flex">
+              <button
+                onClick={(e) => { e.stopPropagation(); onRemoveTextPanel(panel.id); }}
+                className="px-1.5 py-0.5 rounded bg-rose-600/80 text-white text-[10px] hover:bg-rose-700"
+                title="削除"
+              >✕</button>
+            </div>
+          </div>
+        );
+      }
+      return chart;
+    }
   }
 }
 
 // ─── Text Panel ─────────────────────────────────────────────────────────────
 
-function TextPanel({ panel, textColor, deviceLabels }: { panel: TextPanelConfig; textColor: string; deviceLabels?: string[] }) {
-  const content = panel.contentRef !== undefined && deviceLabels?.[panel.contentRef]
+function TextPanel({
+  panel,
+  textColor,
+  deviceLabels,
+  overrideContent,
+  onEdit,
+  onRemove,
+}: {
+  panel: TextPanelConfig;
+  textColor: string;
+  deviceLabels?: string[];
+  overrideContent?: string;
+  onEdit?: (panelId: string, content: string) => void;
+  onRemove?: (panelId: string) => void;
+}) {
+  const resolvedContent = panel.contentRef !== undefined && deviceLabels?.[panel.contentRef]
     ? deviceLabels[panel.contentRef]
     : (panel.content ?? "");
+  const content = overrideContent ?? resolvedContent;
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(content);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isUserPanel = panel.id.startsWith("user-text-");
+
+  useEffect(() => {
+    if (editing && textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.select();
+    }
+  }, [editing]);
+
+  const handleSave = () => {
+    onEdit?.(panel.id, draft);
+    setEditing(false);
+  };
+
+  const handleCancel = () => {
+    setDraft(content);
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <div
+        className="flex flex-col h-full px-2 py-1 gap-1"
+        style={{ color: textColor }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <textarea
+          ref={textareaRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleSave();
+            if (e.key === "Escape") handleCancel();
+          }}
+          className="flex-1 resize-none rounded border border-indigo-400 bg-black/30 px-2 py-1 text-inherit outline-none focus:border-indigo-300"
+          style={{ fontSize: panel.fontSize ?? "1rem" }}
+        />
+        <div className="flex gap-1 justify-end">
+          <button
+            onClick={handleSave}
+            className="px-2 py-0.5 rounded bg-indigo-600 text-white text-[10px] hover:bg-indigo-700"
+          >
+            保存
+          </button>
+          <button
+            onClick={handleCancel}
+            className="px-2 py-0.5 rounded bg-slate-600 text-white text-[10px] hover:bg-slate-700"
+          >
+            キャンセル
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
-      className="flex items-center h-full px-2 panel-drag-handle cursor-move"
+      className="group relative flex items-center h-full px-2 panel-drag-handle cursor-move"
       style={{
         color: textColor,
         fontSize: panel.fontSize ?? "1rem",
@@ -239,8 +353,33 @@ function TextPanel({ panel, textColor, deviceLabels }: { panel: TextPanelConfig;
         lineHeight: 1.3,
         justifyContent: panel.align === "center" ? "center" : panel.align === "right" ? "flex-end" : "flex-start",
       }}
+      onDoubleClick={() => {
+        if (!onEdit) return;
+        setDraft(content);
+        setEditing(true);
+      }}
     >
       {content}
+      {onEdit && (
+        <div className="absolute top-0 right-0 hidden group-hover:flex gap-0.5 p-0.5">
+          <button
+            onClick={(e) => { e.stopPropagation(); setDraft(content); setEditing(true); }}
+            className="px-1.5 py-0.5 rounded bg-indigo-600/80 text-white text-[10px] hover:bg-indigo-700"
+            title="編集"
+          >
+            ✎
+          </button>
+          {isUserPanel && onRemove && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRemove(panel.id); }}
+              className="px-1.5 py-0.5 rounded bg-rose-600/80 text-white text-[10px] hover:bg-rose-700"
+              title="削除"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

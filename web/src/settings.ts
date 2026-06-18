@@ -66,6 +66,25 @@ export interface UserSettings {
   chartBgColor?: string;
   /** User-added events (shown alongside spreadsheet events). */
   localEvents?: EventRow[];
+  /** Content overrides for existing text panels (keyed by panel id). */
+  textOverrides?: Record<string, string>;
+  /** User-created text panels added to the layout. */
+  userTextPanels?: import("./layoutConfig").TextPanelConfig[];
+  /** User-created chart panels added to the layout. */
+  userChartPanels?: UserChartPanel[];
+}
+
+/** A user-created chart panel stored in settings. Works for both normal and custom layouts. */
+export interface UserChartPanel {
+  id: string;
+  title: string;
+  metric: import("./types").Metric;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  yMin?: number;
+  yMax?: number;
 }
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -80,6 +99,9 @@ const DEFAULT_SETTINGS: UserSettings = {
   selectedSourceId: null,
   savedPresets: [],
   localEvents: [],
+  textOverrides: {},
+  userTextPanels: [],
+  userChartPanels: [],
 };
 
 function storageKey(email: string): string {
