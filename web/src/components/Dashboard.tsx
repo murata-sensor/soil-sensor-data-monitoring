@@ -246,6 +246,11 @@ export default function Dashboard() {
     [selected, events],
   );
 
+  const mergedEvents = useMemo(
+    () => [...visibleEvents, ...(settings?.localEvents ?? [])],
+    [visibleEvents, settings?.localEvents],
+  );
+
   // Filter rows by date range
   const filteredRows = useMemo(() => {
     if (!rows || !settings) return rows ?? [];
@@ -466,7 +471,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen" style={{ background: theme.bg, color: theme.text }}>
+    <div className="min-h-screen" style={{ background: settings?.bgColor || theme.bg, color: theme.text }}>
       <header className="px-4 sm:px-6 py-3 sm:py-4 border-b"
         style={{ background: theme.surface }}>
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
@@ -617,20 +622,23 @@ export default function Dashboard() {
             key={`custom-layout-${selectedSourceId ?? "none"}-${customLayoutResetKey}`}
             layout={visibleCustomLayout || customLayout}
             rows={filteredRows}
-            events={visibleEvents}
+            events={mergedEvents}
             panelSettings={settings?.panelSettings}
             deviceColors={settings?.deviceColors}
             showEventLabels={showEventLabels}
+            bgColor={settings?.bgColor}
+            chartBgColor={settings?.chartBgColor}
           />
         ) : (
           <GridContainer
             layout={currentLayout}
             panels={visiblePanels}
             filteredRows={filteredRows}
-            visibleEvents={visibleEvents}
+            visibleEvents={mergedEvents}
             colors={theme.chartColors}
             settings={settings}
-              showEventLabels={showEventLabels}
+            showEventLabels={showEventLabels}
+            chartBgColor={settings?.chartBgColor}
             onLayoutChange={handleLayoutChange}
           />
         )}
@@ -641,6 +649,7 @@ export default function Dashboard() {
           settings={settings}
           panels={settingsPanels}
           rows={filteredRows}
+          schemaType={selected?.schemaType}
           onSave={(s) => { updateSettings(s); setShowSettings(false); }}
           onClose={() => setShowSettings(false)}
           onResetLayout={handleResetLayout}
@@ -685,7 +694,7 @@ function DashboardSkeleton({ count }: { count: number }) {
 
 // ─── Grid Container (uses useContainerWidth hook) ───────────────────────────
 
-function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, settings, showEventLabels, onLayoutChange }: {
+function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, settings, showEventLabels, chartBgColor, onLayoutChange }: {
   layout: LayoutItem[];
   panels: ThemePanel[];
   filteredRows: NormalizedRow[];
@@ -693,6 +702,7 @@ function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, se
   colors: string[];
   settings: UserSettings | null;
   showEventLabels: boolean;
+  chartBgColor?: string;
   onLayoutChange: (layout: Layout) => void;
 }) {
   const { width, containerRef } = useContainerWidth();
@@ -720,6 +730,7 @@ function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, se
                 panelSettings={settings?.panelSettings[p.id]}
                 deviceColors={settings?.deviceColors || {}}
                 showEventLabels={showEventLabels}
+                chartBgColor={chartBgColor}
               />
             </div>
           ))}
@@ -731,7 +742,7 @@ function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, se
 
 // ─── Panel ──────────────────────────────────────────────────────────────────
 
-function Panel({ panel, rows, events, colors, panelSettings, deviceColors, showEventLabels }: {
+function Panel({ panel, rows, events, colors, panelSettings, deviceColors, showEventLabels, chartBgColor }: {
   panel: ThemePanel;
   rows: NormalizedRow[];
   events: EventRow[];
@@ -739,6 +750,7 @@ function Panel({ panel, rows, events, colors, panelSettings, deviceColors, showE
   panelSettings?: PanelSettings;
   deviceColors: DeviceColorMap;
   showEventLabels: boolean;
+  chartBgColor?: string;
 }) {
   const datasets = useMemo(
     () => buildDatasets(panel, rows, colors, deviceColors),
@@ -757,7 +769,7 @@ function Panel({ panel, rows, events, colors, panelSettings, deviceColors, showE
 
     return events
       .filter((e) => {
-        if (e.deviceId) return false; // non-custom panels have no device context; skip per-device events
+        if (e.deviceId && e.deviceId !== "*") return false; // non-custom panels: skip per-device events (except wildcard)
         const ts = parseTs(e.date);
         if (!Number.isFinite(dataMin) || !Number.isFinite(dataMax)) return false;
         return ts >= dataMin && ts <= dataMax;
@@ -791,7 +803,8 @@ function Panel({ panel, rows, events, colors, panelSettings, deviceColors, showE
 
   return (
     <section
-      className="bg-white rounded-2xl shadow p-3 flex flex-col h-full">
+      className="rounded-2xl shadow p-3 flex flex-col h-full"
+      style={{ backgroundColor: chartBgColor || "#ffffff" }}>
       <h3 className="text-sm font-semibold mb-1 panel-drag-handle cursor-move select-none">
         ⠿ {panel.title}
       </h3>
@@ -806,7 +819,7 @@ function Panel({ panel, rows, events, colors, panelSettings, deviceColors, showE
                 type: "time",
                 time: {
                   tooltipFormat: "yyyy-MM-dd HH:mm",
-                  displayFormats: { minute: "HH:mm", hour: "M/d HH:mm", day: "M/d" },
+                  displayFormats: { minute: "yyyy/M/d HH:mm", hour: "yyyy/M/d HH:mm", day: "yyyy/M/d", week: "yyyy/M/d", month: "yyyy/M" },
                 },
                 ticks: {
                   maxTicksLimit: 6,
@@ -930,10 +943,11 @@ function buildMultiMetricDatasets(
 
 // ─── Settings Modal ─────────────────────────────────────────────────────────
 
-function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout, onSavePreset, onLoadPreset, onDeletePreset }: {
+function SettingsModal({ settings, panels, rows, schemaType, onSave, onClose, onResetLayout, onSavePreset, onLoadPreset, onDeletePreset }: {
   settings: UserSettings;
   panels: SettingsPanelInfo[];
   rows: NormalizedRow[];
+  schemaType?: string;
   onSave: (s: Partial<UserSettings>) => void;
   onClose: () => void;
   onResetLayout: () => void;
@@ -945,6 +959,12 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout,
   const [deviceColors, setDeviceColors] = useState(settings.deviceColors);
   const [showAirTemperature, setShowAirTemperature] = useState(settings.showAirTemperature ?? false);
   const [showEventLabels, setShowEventLabels] = useState(settings.showEventLabels ?? true);
+  const [bgColor, setBgColor] = useState(settings.bgColor ?? "");
+  const [chartBgColor, setChartBgColor] = useState(settings.chartBgColor ?? "");
+  const [localEvents, setLocalEvents] = useState<EventRow[]>(settings.localEvents ?? []);
+  const [newEventDate, setNewEventDate] = useState("");
+  const [newEventLabel, setNewEventLabel] = useState("");
+  const [newEventColor, setNewEventColor] = useState("#ef4444");
   const [presetName, setPresetName] = useState("");
 
   // Collect unique device IDs from the data
@@ -1097,7 +1117,8 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout,
           </div>
         </section>
 
-        {/* Device color settings */}
+        {/* Device color settings — M5Stack/Mechatrax only */}
+        {schemaType !== "remote-ftp" && (
         <section className="mb-6">
           <h3 className="font-semibold text-sm mb-2 text-slate-700">デバイス線色</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1117,26 +1138,111 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout,
             ))}
           </div>
         </section>
+        )}
 
         {/* Metric visibility */}
         <section className="mb-6">
           <h3 className="font-semibold text-sm mb-2 text-slate-700">表示設定</h3>
-          <label className="inline-flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={showAirTemperature}
-              onChange={(e) => setShowAirTemperature(e.target.checked)}
-            />
-            <span>air temperature（外気温）を表示</span>
-          </label>
-          <label className="mt-2 inline-flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={showEventLabels}
-              onChange={(e) => setShowEventLabels(e.target.checked)}
-            />
-            <span>events のラベルを表示</span>
-          </label>
+          <div className="space-y-2">
+            {schemaType === "remote-ftp" && (
+              <label className="inline-flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={showAirTemperature}
+                  onChange={(e) => setShowAirTemperature(e.target.checked)}
+                />
+                <span>air temperature（外気温）を表示</span>
+              </label>
+            )}
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={showEventLabels}
+                onChange={(e) => setShowEventLabels(e.target.checked)}
+              />
+              <span>events のラベルを表示</span>
+            </label>
+          </div>
+        </section>
+
+        {/* イベント管理 */}
+        <section className="mb-6">
+          <h3 className="font-semibold text-sm mb-2 text-slate-700">イベント管理</h3>
+          <p className="text-xs text-slate-500 mb-2">
+            グラフ上にイベントラインを追加できます。スプレッドシートの events シートからも自動的に読み込まれます。
+          </p>
+          {localEvents.length > 0 && (
+            <div className="space-y-1 mb-3 max-h-32 overflow-y-auto">
+              {localEvents.map((ev, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs border rounded px-2 py-1">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: ev.color || "#ef4444" }} />
+                  <span className="font-mono shrink-0">{ev.date}</span>
+                  <span className="flex-1 truncate">{ev.label}</span>
+                  <button className="text-slate-400 hover:text-red-500"
+                    onClick={() => setLocalEvents((prev) => prev.filter((_, j) => j !== i))}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2 items-end">
+            <div>
+              <label className="text-xs text-slate-500 block">日付</label>
+              <input type="datetime-local" className="border rounded px-1 py-0.5 text-xs"
+                value={newEventDate} onChange={(e) => setNewEventDate(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 block">ラベル</label>
+              <input type="text" className="border rounded px-1 py-0.5 text-xs w-32"
+                value={newEventLabel} onChange={(e) => setNewEventLabel(e.target.value)}
+                placeholder="例: 灌水" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 block">色</label>
+              <input type="color" className="w-8 h-6 border rounded cursor-pointer"
+                value={newEventColor} onChange={(e) => setNewEventColor(e.target.value)} />
+            </div>
+            <button
+              disabled={!newEventDate || !newEventLabel}
+              onClick={() => {
+                setLocalEvents((prev) => [...prev, {
+                  date: newEventDate.replace("T", " "),
+                  label: newEventLabel,
+                  color: newEventColor,
+                }]);
+                setNewEventDate(""); setNewEventLabel("");
+              }}
+              className="px-2 py-0.5 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40"
+            >
+              追加
+            </button>
+          </div>
+        </section>
+
+        {/* 背景色設定 */}
+        <section className="mb-6">
+          <h3 className="font-semibold text-sm mb-2 text-slate-700">背景色</h3>
+          <div className="flex flex-wrap gap-4">
+            <div className="flex items-center gap-2 text-sm">
+              <span>全体の背景色</span>
+              <input type="color" className="w-8 h-6 border rounded cursor-pointer"
+                value={bgColor || "#f8fafc"}
+                onChange={(e) => setBgColor(e.target.value)} />
+              {bgColor && (
+                <button className="text-xs text-slate-400 hover:text-red-500"
+                  onClick={() => setBgColor("")}>リセット</button>
+              )}
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <span>グラフの背景色</span>
+              <input type="color" className="w-8 h-6 border rounded cursor-pointer"
+                value={chartBgColor || "#ffffff"}
+                onChange={(e) => setChartBgColor(e.target.value)} />
+              {chartBgColor && (
+                <button className="text-xs text-slate-400 hover:text-red-500"
+                  onClick={() => setChartBgColor("")}>リセット</button>
+              )}
+            </div>
+          </div>
         </section>
 
         {/* Layout Presets */}
@@ -1204,7 +1310,7 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout,
               キャンセル
             </button>
             <button
-              onClick={() => onSave({ panelSettings, deviceColors, showAirTemperature, showEventLabels })}
+              onClick={() => onSave({ panelSettings, deviceColors, showAirTemperature, showEventLabels, bgColor: bgColor || undefined, chartBgColor: chartBgColor || undefined, localEvents })}
               className="px-4 py-1 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-700">
               保存
             </button>

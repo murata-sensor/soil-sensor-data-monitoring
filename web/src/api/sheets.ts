@@ -198,7 +198,8 @@ function parseEvents(raw: Record<string, string>[]): EventRow[] {
     label: r.label,
     color: r.color || undefined,
     deviceId: r.deviceId ? r.deviceId.trim() : undefined,
-  })).filter((e) => e.date && e.label);
+    enabled: r.enabled ? r.enabled.trim().toUpperCase() !== "FALSE" : true,
+  })).filter((e) => e.date && e.label && e.enabled !== false);
 }
 
 /**

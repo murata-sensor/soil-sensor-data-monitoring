@@ -47,6 +47,8 @@ interface CustomLayoutProps {
   panelSettings?: Record<string, PanelSettings>;
   deviceColors?: DeviceColorMap;
   showEventLabels?: boolean;
+  bgColor?: string;
+  chartBgColor?: string;
   onLayoutChange?: (panels: LayoutPanel[]) => void;
 }
 
@@ -57,12 +59,14 @@ export function CustomLayoutDashboard({
   panelSettings,
   deviceColors,
   showEventLabels = true,
+  bgColor,
+  chartBgColor,
   onLayoutChange,
 }: CustomLayoutProps) {
   const { width, containerRef } = useContainerWidth();
   const cols = layout.cols ?? 12;
-  const bg = layout.bg ?? "#1a1a1a";
-  const surface = layout.surface ?? "#2a2a2a";
+  const bg = bgColor || (layout.bg ?? "#1a1a1a");
+  const surface = chartBgColor || (layout.surface ?? "#2a2a2a");
   const textColor = layout.textColor ?? "#ffffff";
 
   // Compute row height dynamically to fill viewport height
@@ -368,9 +372,9 @@ function ChartPanel({
       }
     }
 
-    // Show event if: no deviceId (global) OR deviceId matches this panel's device filter
+    // Show event if: no deviceId (global), wildcard "*", or deviceId matches this panel's device filter
     const visibleEvents = events.filter((e) => {
-      if (e.deviceId && deviceFilter?.length && !deviceFilter.includes(e.deviceId)) return false;
+      if (e.deviceId && e.deviceId !== "*" && deviceFilter?.length && !deviceFilter.includes(e.deviceId)) return false;
       // Exclude events outside the data time range
       const ts = parseTs(e.date);
       if (!Number.isFinite(dataMin) || !Number.isFinite(dataMax)) return false;
@@ -439,10 +443,10 @@ function ChartPanel({
                 time: {
                   tooltipFormat: "yyyy-MM-dd HH:mm",
                   displayFormats: {
-                    minute: "M/d HH:mm",
-                    hour: "M/d HH:mm",
-                    day: "M/d",
-                    week: "M/d",
+                    minute: "yyyy/M/d HH:mm",
+                    hour: "yyyy/M/d HH:mm",
+                    day: "yyyy/M/d",
+                    week: "yyyy/M/d",
                     month: "yyyy/M",
                   },
                 },

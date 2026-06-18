@@ -1,4 +1,4 @@
-import type { SubstrateType } from "./types";
+import type { EventRow, SubstrateType } from "./types";
 
 /**
  * Per-user dashboard settings persisted in localStorage.
@@ -60,6 +60,12 @@ export interface UserSettings {
   selectedSourceId: string | null;
   /** Saved layout presets. */
   savedPresets: LayoutPreset[];
+  /** Custom overall background color. */
+  bgColor?: string;
+  /** Custom chart/panel background color. */
+  chartBgColor?: string;
+  /** User-added events (shown alongside spreadsheet events). */
+  localEvents?: EventRow[];
 }
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -73,6 +79,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   substrateTypes: {},
   selectedSourceId: null,
   savedPresets: [],
+  localEvents: [],
 };
 
 function storageKey(email: string): string {

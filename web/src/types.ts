@@ -36,6 +36,8 @@ export interface EventRow {
   color?: string;
   /** If set, show only on panels for this specific deviceId. Omit for global (all devices). */
   deviceId?: string;
+  /** When false, the event is hidden. Defaults to true if omitted. */
+  enabled?: boolean;
 }
 
 export type Metric =
