@@ -22,7 +22,7 @@ import {
 import type { NormalizedRow } from "../adapters";
 import { ConsentRequiredError, requestConsentToken, signOut } from "../auth/google";
 import {
-  type DateRangeType, type DeviceColorMap,
+  type DateRangeType, type DeviceColorMap, type LayoutPreset,
   type PanelSettings, type UserSettings,
   dateRangeToMs, loadSettings, parseTs, saveSettings,
 } from "../settings";
@@ -371,6 +371,47 @@ export default function Dashboard() {
     setCustomLayoutResetKey((k) => k + 1);
   }, [updateSettings]);
 
+  const handleSavePreset = useCallback((name: string) => {
+    if (!settings) return;
+    const preset: LayoutPreset = {
+      id: crypto.randomUUID(),
+      name,
+      createdAt: new Date().toISOString(),
+      layout: settings.layout,
+      sourceId: selectedSourceId,
+      ftpSheetName: settings.ftpSheetName,
+      substrateTypes: { ...settings.substrateTypes },
+      dateRange: { ...settings.dateRange },
+      panelSettings: { ...settings.panelSettings },
+      deviceColors: { ...settings.deviceColors },
+    };
+    updateSettings({ savedPresets: [...(settings.savedPresets ?? []), preset] });
+  }, [settings, selectedSourceId, updateSettings]);
+
+  const handleLoadPreset = useCallback((preset: LayoutPreset) => {
+    updateSettings({
+      layout: preset.layout,
+      selectedSourceId: preset.sourceId,
+      ftpSheetName: preset.ftpSheetName,
+      substrateTypes: { ...settings!.substrateTypes, ...preset.substrateTypes },
+      dateRange: preset.dateRange,
+      panelSettings: preset.panelSettings,
+      deviceColors: preset.deviceColors,
+    });
+    if (preset.sourceId) {
+      setSelectedSource(preset.sourceId);
+    }
+    setCustomLayoutResetKey((k) => k + 1);
+    setShowSettings(false);
+  }, [settings, updateSettings, setSelectedSource]);
+
+  const handleDeletePreset = useCallback((presetId: string) => {
+    if (!settings) return;
+    updateSettings({
+      savedPresets: (settings.savedPresets ?? []).filter((p) => p.id !== presetId),
+    });
+  }, [settings, updateSettings]);
+
   if (needsConsent) {
     return (
       <div className="p-10 text-center">
@@ -603,6 +644,9 @@ export default function Dashboard() {
           onSave={(s) => { updateSettings(s); setShowSettings(false); }}
           onClose={() => setShowSettings(false)}
           onResetLayout={handleResetLayout}
+          onSavePreset={handleSavePreset}
+          onLoadPreset={handleLoadPreset}
+          onDeletePreset={handleDeletePreset}
         />
       )}
     </div>
@@ -886,18 +930,22 @@ function buildMultiMetricDatasets(
 
 // ─── Settings Modal ─────────────────────────────────────────────────────────
 
-function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout }: {
+function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout, onSavePreset, onLoadPreset, onDeletePreset }: {
   settings: UserSettings;
   panels: SettingsPanelInfo[];
   rows: NormalizedRow[];
   onSave: (s: Partial<UserSettings>) => void;
   onClose: () => void;
   onResetLayout: () => void;
+  onSavePreset: (name: string) => void;
+  onLoadPreset: (preset: LayoutPreset) => void;
+  onDeletePreset: (presetId: string) => void;
 }) {
   const [panelSettings, setPanelSettings] = useState(settings.panelSettings);
   const [deviceColors, setDeviceColors] = useState(settings.deviceColors);
   const [showAirTemperature, setShowAirTemperature] = useState(settings.showAirTemperature ?? false);
   const [showEventLabels, setShowEventLabels] = useState(settings.showEventLabels ?? true);
+  const [presetName, setPresetName] = useState("");
 
   // Collect unique device IDs from the data
   const deviceIds = useMemo(() => {
@@ -1089,6 +1137,59 @@ function SettingsModal({ settings, panels, rows, onSave, onClose, onResetLayout 
             />
             <span>events のラベルを表示</span>
           </label>
+        </section>
+
+        {/* Layout Presets */}
+        <section className="mb-6">
+          <h3 className="font-semibold text-sm mb-2">レイアウトプリセット</h3>
+          <div className="flex gap-2 mb-3">
+            <input
+              type="text"
+              placeholder="プリセット名を入力"
+              value={presetName}
+              onChange={(e) => setPresetName(e.target.value)}
+              className="flex-1 border rounded px-2 py-1 text-sm"
+              maxLength={40}
+            />
+            <button
+              onClick={() => { if (presetName.trim()) { onSavePreset(presetName.trim()); setPresetName(""); } }}
+              disabled={!presetName.trim()}
+              className="px-3 py-1 text-sm rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40"
+            >
+              現在の状態を保存
+            </button>
+          </div>
+          {(settings.savedPresets ?? []).length === 0 ? (
+            <p className="text-xs text-slate-400">保存されたプリセットはありません</p>
+          ) : (
+            <ul className="space-y-1 max-h-40 overflow-y-auto">
+              {(settings.savedPresets ?? []).map((p) => (
+                <li key={p.id} className="flex items-center justify-between border rounded px-2 py-1 text-sm">
+                  <div className="min-w-0 flex-1">
+                    <span className="font-medium truncate block">{p.name}</span>
+                    <span className="text-xs text-slate-400">
+                      {new Date(p.createdAt).toLocaleDateString("ja-JP")}
+                      {p.sourceId && ` · ${p.sourceId}`}
+                    </span>
+                  </div>
+                  <div className="flex gap-1 ml-2 shrink-0">
+                    <button
+                      onClick={() => onLoadPreset(p)}
+                      className="px-2 py-0.5 text-xs rounded bg-indigo-600 text-white hover:bg-indigo-700"
+                    >
+                      読み込み
+                    </button>
+                    <button
+                      onClick={() => onDeletePreset(p.id)}
+                      className="px-2 py-0.5 text-xs rounded border border-rose-300 text-rose-600 hover:bg-rose-50"
+                    >
+                      削除
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
 
         {/* Actions */}

@@ -33,6 +33,19 @@ export interface DeviceColorMap {
 
 export type FtpSheetName = string;
 
+export interface LayoutPreset {
+  id: string;
+  name: string;
+  createdAt: string; // ISO string
+  layout: LayoutItem[] | null;
+  sourceId: string | null;
+  ftpSheetName: FtpSheetName;
+  substrateTypes: Record<string, SubstrateType>;
+  dateRange: DateRange;
+  panelSettings: Record<string, PanelSettings>;
+  deviceColors: DeviceColorMap;
+}
+
 export interface UserSettings {
   dateRange: DateRange;
   panelSettings: Record<string, PanelSettings>; // keyed by panel id
@@ -45,6 +58,8 @@ export interface UserSettings {
   substrateTypes: Record<string, SubstrateType>;
   /** Last selected data source. */
   selectedSourceId: string | null;
+  /** Saved layout presets. */
+  savedPresets: LayoutPreset[];
 }
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -57,6 +72,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   showEventLabels: true,
   substrateTypes: {},
   selectedSourceId: null,
+  savedPresets: [],
 };
 
 function storageKey(email: string): string {
