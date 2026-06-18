@@ -15,8 +15,11 @@ KEY = "mechatrax"
 HEADER_MAP = {
     "Date": "ts",
     "SerialNumber": "device_id",
+    # Battery
     "Battery残量(%)": "battery_pct",
+    "Battery_percentage(%)": "battery_pct",
     "Battery_voltage(mV)": "_battery_voltage_mv",  # special: convert mV -> V
+    # Soil sensor
     "Temperature(degC)": "temperature_c",
     "VWC(%)": "vwc_pct",
     "VWC_coco(%)": "vwc_coco_pct",
@@ -24,9 +27,14 @@ HEADER_MAP = {
     "EC bulk(dS/m)": "ec_bulk_dsm",
     "EC_pore(dS/m)": "ec_pore_dsm",
     "EC_porecoco(dS/m)": "ec_pore_coco_dsm",
+    # Weather (Japanese headers)
     "外気温": "air_temp_c",
     "1hの降水量": "precip_1h_mm",
     "1hの日照時間": "sunshine_1h_h",
+    # Weather (English headers)
+    "locTemp": "air_temp_c",
+    "locPrec": "precip_1h_mm",
+    "locSun": "sunshine_1h_h",
 }
 
 STRING_FIELDS = {"ts", "device_id"}

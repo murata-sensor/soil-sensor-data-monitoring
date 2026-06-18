@@ -1,3 +1,5 @@
+import type { SubstrateType } from "./types";
+
 /**
  * Per-user dashboard settings persisted in localStorage.
  */
@@ -39,6 +41,10 @@ export interface UserSettings {
   ftpSheetName: FtpSheetName;
   showAirTemperature: boolean;
   showEventLabels: boolean;
+  /** Substrate type per source (keyed by sourceId). */
+  substrateTypes: Record<string, SubstrateType>;
+  /** Last selected data source. */
+  selectedSourceId: string | null;
 }
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -49,6 +55,8 @@ const DEFAULT_SETTINGS: UserSettings = {
   ftpSheetName: "sensor_raw",
   showAirTemperature: false,
   showEventLabels: true,
+  substrateTypes: {},
+  selectedSourceId: null,
 };
 
 function storageKey(email: string): string {

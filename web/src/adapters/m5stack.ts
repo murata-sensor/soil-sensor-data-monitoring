@@ -25,7 +25,8 @@ export function toNormalized(values: string[][]): NormalizedRow[] {
   const header = values[0];
   const idx: { col: number; field: keyof NormalizedRow }[] = [];
   header.forEach((name, col) => {
-    const field = HEADER_MAP[name];
+    const trimmed = (name ?? "").trim();
+    const field = HEADER_MAP[trimmed];
     if (field) idx.push({ col, field });
   });
   const out: NormalizedRow[] = [];

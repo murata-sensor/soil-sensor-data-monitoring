@@ -25,17 +25,27 @@ export class RegistryAccessDeniedError extends Error {
 }
 
 async function sheetsGet(spreadsheetId: string, range: string): Promise<string[][]> {
-  const token = await getAccessToken();
-  const url =
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}` +
-    `/values/${encodeURIComponent(range)}`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) {
-    if (res.status === 403) throw new RegistryAccessDeniedError(range);
-    throw new Error(`Sheets API ${res.status} on ${range}`);
+  const MAX_RETRIES = 3;
+  let delay = 1000; // initial backoff 1s
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const token = await getAccessToken();
+    const url =
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}` +
+      `/values/${encodeURIComponent(range)}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 429 && attempt < MAX_RETRIES) {
+      await new Promise((r) => setTimeout(r, delay));
+      delay *= 2;
+      continue;
+    }
+    if (!res.ok) {
+      if (res.status === 403) throw new RegistryAccessDeniedError(range);
+      throw new Error(`Sheets API ${res.status} on ${range}`);
+    }
+    const json = (await res.json()) as { values?: string[][] };
+    return json.values ?? [];
   }
-  const json = (await res.json()) as { values?: string[][] };
-  return json.values ?? [];
+  throw new Error(`Sheets API 429 on ${range} (retries exhausted)`);
 }
 
 function toObjects<T>(values: string[][]): T[] {

@@ -54,10 +54,21 @@ export type Metric =
   | "precip_1h_mm"
   | "sunshine_1h_h";
 
+export type SubstrateType = "soil" | "rockwool" | "cocopeat" | "all";
+
+export const SUBSTRATE_OPTIONS: { value: SubstrateType; label: string }[] = [
+  { value: "soil", label: "一般土壌" },
+  { value: "rockwool", label: "ロックウール" },
+  { value: "cocopeat", label: "ココピート" },
+  { value: "all", label: "全て表示" },
+];
+
 export interface ThemePanel {
   id: string;
   title: string;
   metric: Metric;
+  /** When set, plot multiple metrics on the same chart (overrides single `metric` for dataset building). */
+  metrics?: Metric[];
   x: number; y: number; w: number; h: number;
   yMin?: number; yMax?: number;
   showPoints?: boolean;
@@ -94,10 +105,68 @@ export const SCHEMA_EXTRA_PANELS: Record<SchemaType, ThemePanel[]> = {
     { id: "err",   title: "Error flag",      metric: "error_flag", x: 6, y: 11, w: 6, h: 3 },
   ],
   "mechatrax": [
-    { id: "airt",  title: "外気温 (AMeDAS)",     metric: "air_temp_c",    x: 0, y: 11, w: 4, h: 3 },
-    { id: "prec",  title: "1h 降水量 (AMeDAS)",  metric: "precip_1h_mm",  x: 4, y: 11, w: 4, h: 3 },
-    { id: "sun",   title: "1h 日照 (AMeDAS)",    metric: "sunshine_1h_h", x: 8, y: 11, w: 4, h: 3 },
-    { id: "batp",  title: "バッテリー残量 (%)",  metric: "battery_pct",   x: 0, y: 14, w: 12, h: 3 },
+    { id: "airt",  title: "外気温 (AMeDAS)",     metric: "air_temp_c",    x: 0, y: 11, w: 12, h: 3 },
+    { id: "prec",  title: "1h 降水量 (AMeDAS)",  metric: "precip_1h_mm",  x: 0, y: 14, w: 12, h: 3 },
+    { id: "sun",   title: "1h 日照 (AMeDAS)",    metric: "sunshine_1h_h", x: 0, y: 17, w: 12, h: 3 },
+    { id: "batp",  title: "バッテリー残量 (%)",  metric: "battery_pct",   x: 0, y: 20, w: 12, h: 3 },
   ],
   "remote-ftp": [],
 };
+
+/**
+ * Generate panels for M5Stack/Mechatrax based on substrate type.
+ */
+export function getPanelsForSubstrate(schemaType: SchemaType, substrate: SubstrateType): ThemePanel[] {
+  if (schemaType === "remote-ftp") return [];
+
+  const soilPanels: ThemePanel[] = (() => {
+    switch (substrate) {
+      case "soil":
+        return [
+          { id: "vwc",  title: "VWC (体積含水率 %)", metric: "vwc_pct",       x: 0, y: 0, w: 12, h: 4 },
+          { id: "bec",  title: "Bulk EC (dS/m)",     metric: "ec_bulk_dsm",   x: 0, y: 4, w: 12, h: 4 },
+          { id: "pec",  title: "Pore EC (dS/m)",     metric: "ec_pore_dsm",   x: 0, y: 8, w: 12, h: 4 },
+          { id: "temp", title: "土壌温度 (℃)",       metric: "temperature_c", x: 0, y: 12, w: 12, h: 4 },
+        ];
+      case "rockwool":
+        return [
+          { id: "vwc_rock", title: "VWC ロックウール (%)", metric: "vwc_rock_pct",   x: 0, y: 0, w: 12, h: 4 },
+          { id: "bec",      title: "Bulk EC (dS/m)",       metric: "ec_bulk_dsm",    x: 0, y: 4, w: 12, h: 4 },
+          { id: "temp",     title: "土壌温度 (℃)",         metric: "temperature_c",  x: 0, y: 8, w: 12, h: 4 },
+        ];
+      case "cocopeat":
+        return [
+          { id: "vwc_coco", title: "VWC ココピート (%)",    metric: "vwc_coco_pct",      x: 0, y: 0, w: 12, h: 4 },
+          { id: "pec_coco", title: "Pore EC ココピート (dS/m)", metric: "ec_pore_coco_dsm", x: 0, y: 4, w: 12, h: 4 },
+          { id: "temp",     title: "土壌温度 (℃)",          metric: "temperature_c",     x: 0, y: 8, w: 12, h: 4 },
+        ];
+      case "all":
+        return [
+          { id: "vwc_all", title: "VWC 全種 (%)", metric: "vwc_pct", metrics: ["vwc_pct", "vwc_rock_pct", "vwc_coco_pct"], x: 0, y: 0, w: 12, h: 4 },
+          { id: "ec_all",  title: "EC 全種 (dS/m)", metric: "ec_bulk_dsm", metrics: ["ec_bulk_dsm", "ec_pore_dsm", "ec_pore_coco_dsm"], x: 0, y: 4, w: 12, h: 4 },
+          { id: "temp",    title: "土壌温度 (℃)", metric: "temperature_c", x: 0, y: 8, w: 12, h: 4 },
+        ];
+    }
+  })();
+
+  // Additional panels by schema type
+  const extraPanels: ThemePanel[] = (() => {
+    const baseY = soilPanels.reduce((max, p) => Math.max(max, p.y + p.h), 0);
+    if (schemaType === "m5stack") {
+      return [
+        { id: "bat",  title: "バッテリー電圧 (V)", metric: "battery_v",  x: 0, y: baseY, w: 12, h: 4 },
+      ];
+    }
+    if (schemaType === "mechatrax") {
+      return [
+        { id: "batp", title: "バッテリー残量 (%)",  metric: "battery_pct",   x: 0, y: baseY,      w: 12, h: 4 },
+        { id: "airt", title: "外気温 (AMeDAS)",     metric: "air_temp_c",    x: 0, y: baseY + 4,  w: 12, h: 4 },
+        { id: "prec", title: "1h 降水量 (AMeDAS)",  metric: "precip_1h_mm",  x: 0, y: baseY + 8,  w: 12, h: 4 },
+        { id: "sun",  title: "1h 日照 (AMeDAS)",    metric: "sunshine_1h_h", x: 0, y: baseY + 12, w: 12, h: 4 },
+      ];
+    }
+    return [];
+  })();
+
+  return [...soilPanels, ...extraPanels];
+}
