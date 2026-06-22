@@ -109,6 +109,8 @@ export default function Dashboard() {
   const [showSettings, setShowSettings] = useState(false);
   const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [customLayoutResetKey, setCustomLayoutResetKey] = useState(0);
+  const [viewMode, setViewMode] = useState<"edit" | "view">("edit");
+  const isViewMode = viewMode === "view";
 
   const updateSettings = useCallback((patch: Partial<UserSettings>) => {
     if (!user || !settings) return;
@@ -527,8 +529,8 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen" style={{ background: settings?.bgColor || theme.bg, color: theme.text }}>
-      <header className="px-4 sm:px-6 py-3 sm:py-4 border-b"
+    <div className={`min-h-screen ${isViewMode ? "view-mode" : ""}`} style={{ background: settings?.bgColor || theme.bg, color: theme.text }}>
+      <header className={`px-4 sm:px-6 py-3 sm:py-4 border-b ${isViewMode ? "print:hidden" : ""}`}
         style={{ background: theme.surface }}>
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
           {/* 左: タイトル */}
@@ -630,14 +632,29 @@ export default function Dashboard() {
               </button>
             </div>
           </div>
-          {/* 右: 設定・管理・ログアウト */}
+          {/* 右: モード切替・設定・管理・ログアウト */}
           <div className="flex gap-1 sm:gap-2 items-center justify-end">
-            <button onClick={() => setShowSettings(true)}
-              className="px-2 sm:px-3 py-1 rounded bg-indigo-600 text-white text-xs sm:text-sm">
-              設定
+            <button
+              onClick={() => setViewMode(viewMode === "edit" ? "view" : "edit")}
+              className={`px-2 sm:px-3 py-1 rounded text-xs sm:text-sm ${
+                isViewMode
+                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                  : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+              }`}
+              title={isViewMode ? "編集モードに切り替え" : "表示モードに切り替え（印刷向け）"}
+            >
+              {isViewMode ? "編集モード" : "表示モード"}
             </button>
-            {isAdmin && (
-              <a href="./admin" className="px-2 sm:px-3 py-1 rounded bg-slate-800 text-white text-xs sm:text-sm">管理</a>
+            {!isViewMode && (
+              <>
+                <button onClick={() => setShowSettings(true)}
+                  className="px-2 sm:px-3 py-1 rounded bg-indigo-600 text-white text-xs sm:text-sm">
+                  設定
+                </button>
+                {isAdmin && (
+                  <a href="./admin" className="px-2 sm:px-3 py-1 rounded bg-slate-800 text-white text-xs sm:text-sm">管理</a>
+                )}
+              </>
             )}
             <button
               onClick={() => { signOut(); setUser(null); }}
@@ -675,14 +692,16 @@ export default function Dashboard() {
           <DashboardSkeleton count={skeletonCount} />
         ) : (
           <>
-            <AddPanelToolbar
-              onAddText={handleAddTextPanel}
-              onAddChart={handleAddChartPanel}
-              existingPanels={customLayout
-                ? (visibleCustomLayout || customLayout).panels.length
-                : visiblePanels.length + (settings?.userTextPanels ?? []).length}
-              cols={customLayout?.cols ?? 12}
-            />
+            {!isViewMode && (
+              <AddPanelToolbar
+                onAddText={handleAddTextPanel}
+                onAddChart={handleAddChartPanel}
+                existingPanels={customLayout
+                  ? (visibleCustomLayout || customLayout).panels.length
+                  : visiblePanels.length + (settings?.userTextPanels ?? []).length}
+                cols={customLayout?.cols ?? 12}
+              />
+            )}
             {customLayout ? (
               <CustomLayoutDashboard
                 key={`custom-layout-${selectedSourceId ?? "none"}-${customLayoutResetKey}`}
@@ -695,8 +714,9 @@ export default function Dashboard() {
                 bgColor={settings?.bgColor}
                 chartBgColor={settings?.chartBgColor}
                 textOverrides={settings?.textOverrides}
-                onTextEdit={handleTextEdit}
-                onRemoveTextPanel={handleRemoveUserPanel}
+                onTextEdit={isViewMode ? undefined : handleTextEdit}
+                onRemoveTextPanel={isViewMode ? undefined : handleRemoveUserPanel}
+                readOnly={isViewMode}
               />
             ) : (
               <GridContainer
@@ -711,8 +731,9 @@ export default function Dashboard() {
                 onLayoutChange={handleLayoutChange}
                 userTextPanels={settings?.userTextPanels ?? []}
                 textOverrides={settings?.textOverrides ?? {}}
-                onTextEdit={handleTextEdit}
-                onRemoveUserPanel={handleRemoveUserPanel}
+                onTextEdit={isViewMode ? undefined : handleTextEdit}
+                onRemoveUserPanel={isViewMode ? undefined : handleRemoveUserPanel}
+                readOnly={isViewMode}
               />
             )}
           </>
@@ -769,7 +790,7 @@ function DashboardSkeleton({ count }: { count: number }) {
 
 // ─── Grid Container (uses useContainerWidth hook) ───────────────────────────
 
-function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, settings, showEventLabels, chartBgColor, onLayoutChange, userTextPanels, textOverrides, onTextEdit, onRemoveUserPanel }: {
+function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, settings, showEventLabels, chartBgColor, onLayoutChange, userTextPanels, textOverrides, onTextEdit, onRemoveUserPanel, readOnly }: {
   layout: LayoutItem[];
   panels: ThemePanel[];
   filteredRows: NormalizedRow[];
@@ -781,8 +802,9 @@ function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, se
   onLayoutChange: (layout: Layout) => void;
   userTextPanels: TextPanelConfig[];
   textOverrides: Record<string, string>;
-  onTextEdit: (panelId: string, content: string) => void;
-  onRemoveUserPanel: (panelId: string) => void;
+  onTextEdit?: (panelId: string, content: string) => void;
+  onRemoveUserPanel?: (panelId: string) => void;
+  readOnly?: boolean;
 }) {
   const { width, containerRef } = useContainerWidth();
 
@@ -810,13 +832,13 @@ function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, se
           breakpoints={{ lg: 996, md: 768, sm: 480 }}
           cols={{ lg: 12, md: 8, sm: 4 }}
           rowHeight={80}
-          onLayoutChange={onLayoutChange}
-          dragConfig={{ handle: ".panel-drag-handle", enabled: true }}
+          onLayoutChange={readOnly ? undefined : onLayoutChange}
+          dragConfig={{ handle: ".panel-drag-handle", enabled: !readOnly }}
         >
           {panels.map((p) => (
             <div key={p.id}>
-              {p.id.startsWith("user-chart-") ? (
-                <UserPanelWrapper panelId={p.id} onRemove={onRemoveUserPanel}>
+              {p.id.startsWith("user-chart-") && !readOnly ? (
+                <UserPanelWrapper panelId={p.id} onRemove={onRemoveUserPanel!}>
                   <Panel
                     panel={p}
                     rows={filteredRows}
@@ -826,6 +848,7 @@ function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, se
                     deviceColors={settings?.deviceColors || {}}
                     showEventLabels={showEventLabels}
                     chartBgColor={chartBgColor}
+                    readOnly={readOnly}
                   />
                 </UserPanelWrapper>
               ) : (
@@ -838,6 +861,7 @@ function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, se
                   deviceColors={settings?.deviceColors || {}}
                   showEventLabels={showEventLabels}
                   chartBgColor={chartBgColor}
+                  readOnly={readOnly}
                 />
               )}
             </div>
@@ -850,6 +874,7 @@ function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, se
                 onEdit={onTextEdit}
                 onRemove={onRemoveUserPanel}
                 chartBgColor={chartBgColor}
+                readOnly={readOnly}
               />
             </div>
           ))}
@@ -861,7 +886,7 @@ function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, se
 
 // ─── Panel ──────────────────────────────────────────────────────────────────
 
-function Panel({ panel, rows, events, colors, panelSettings, deviceColors, showEventLabels, chartBgColor }: {
+function Panel({ panel, rows, events, colors, panelSettings, deviceColors, showEventLabels, chartBgColor, readOnly }: {
   panel: ThemePanel;
   rows: NormalizedRow[];
   events: EventRow[];
@@ -870,6 +895,7 @@ function Panel({ panel, rows, events, colors, panelSettings, deviceColors, showE
   deviceColors: DeviceColorMap;
   showEventLabels: boolean;
   chartBgColor?: string;
+  readOnly?: boolean;
 }) {
   const datasets = useMemo(
     () => buildDatasets(panel, rows, colors, deviceColors),
@@ -924,8 +950,8 @@ function Panel({ panel, rows, events, colors, panelSettings, deviceColors, showE
     <section
       className="rounded-2xl shadow p-3 flex flex-col h-full"
       style={{ backgroundColor: chartBgColor || "#ffffff" }}>
-      <h3 className="text-sm font-semibold mb-1 panel-drag-handle cursor-move select-none">
-        ⠿ {panel.title}
+      <h3 className={`text-sm font-semibold mb-1 ${readOnly ? "" : "panel-drag-handle cursor-move"} select-none`}>
+        {readOnly ? "" : "⠿ "}{panel.title}
       </h3>
       <div className="relative flex-1 min-h-0">
         <Line
@@ -1174,12 +1200,13 @@ function AddPanelToolbar({ onAddText, onAddChart, existingPanels, cols }: {
 
 // ─── Normal Text Panel (for default theme layout) ───────────────────────────
 
-function NormalTextPanel({ panel, overrideContent, onEdit, onRemove, chartBgColor }: {
+function NormalTextPanel({ panel, overrideContent, onEdit, onRemove, chartBgColor, readOnly }: {
   panel: TextPanelConfig;
   overrideContent?: string;
-  onEdit: (panelId: string, content: string) => void;
-  onRemove: (panelId: string) => void;
+  onEdit?: (panelId: string, content: string) => void;
+  onRemove?: (panelId: string) => void;
   chartBgColor?: string;
+  readOnly?: boolean;
 }) {
   const content = overrideContent ?? panel.content ?? "";
   const [editing, setEditing] = useState(false);
@@ -1194,11 +1221,11 @@ function NormalTextPanel({ panel, overrideContent, onEdit, onRemove, chartBgColo
   }, [editing]);
 
   const handleSave = () => {
-    onEdit(panel.id, draft);
+    onEdit?.(panel.id, draft);
     setEditing(false);
   };
 
-  if (editing) {
+  if (editing && !readOnly) {
     return (
       <section
         className="rounded-2xl shadow p-3 flex flex-col h-full"
@@ -1225,7 +1252,7 @@ function NormalTextPanel({ panel, overrideContent, onEdit, onRemove, chartBgColo
 
   return (
     <section
-      className="group relative rounded-2xl shadow p-3 flex items-center h-full panel-drag-handle cursor-move"
+      className={`group relative rounded-2xl shadow p-3 flex items-center h-full ${readOnly ? "" : "panel-drag-handle cursor-move"}`}
       style={{
         backgroundColor: chartBgColor || "#ffffff",
         fontSize: panel.fontSize ?? "1rem",
@@ -1233,21 +1260,23 @@ function NormalTextPanel({ panel, overrideContent, onEdit, onRemove, chartBgColo
         whiteSpace: "pre-line",
         lineHeight: 1.3,
       }}
-      onDoubleClick={() => { setDraft(content); setEditing(true); }}
+      onDoubleClick={readOnly ? undefined : () => { setDraft(content); setEditing(true); }}
     >
       {content}
-      <div className="absolute top-1 right-1 hidden group-hover:flex gap-0.5">
-        <button
-          onClick={(e) => { e.stopPropagation(); setDraft(content); setEditing(true); }}
-          className="px-1.5 py-0.5 rounded bg-indigo-600/80 text-white text-[10px] hover:bg-indigo-700"
-          title="編集"
-        >✎</button>
-        <button
-          onClick={(e) => { e.stopPropagation(); onRemove(panel.id); }}
-          className="px-1.5 py-0.5 rounded bg-rose-600/80 text-white text-[10px] hover:bg-rose-700"
-          title="削除"
-        >✕</button>
-      </div>
+      {!readOnly && (
+        <div className="absolute top-1 right-1 hidden group-hover:flex gap-0.5">
+          <button
+            onClick={(e) => { e.stopPropagation(); setDraft(content); setEditing(true); }}
+            className="px-1.5 py-0.5 rounded bg-indigo-600/80 text-white text-[10px] hover:bg-indigo-700"
+            title="編集"
+          >✎</button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onRemove?.(panel.id); }}
+            className="px-1.5 py-0.5 rounded bg-rose-600/80 text-white text-[10px] hover:bg-rose-700"
+            title="削除"
+          >✕</button>
+        </div>
+      )}
     </section>
   );
 }

@@ -53,6 +53,7 @@ interface CustomLayoutProps {
   textOverrides?: Record<string, string>;
   onTextEdit?: (panelId: string, content: string) => void;
   onRemoveTextPanel?: (panelId: string) => void;
+  readOnly?: boolean;
 }
 
 export function CustomLayoutDashboard({
@@ -68,6 +69,7 @@ export function CustomLayoutDashboard({
   textOverrides,
   onTextEdit,
   onRemoveTextPanel,
+  readOnly,
 }: CustomLayoutProps) {
   const { width, containerRef } = useContainerWidth();
   const cols = layout.cols ?? 12;
@@ -152,9 +154,9 @@ export function CustomLayoutDashboard({
           breakpoints={{ lg: 996, md: 768, sm: 480 }}
           cols={{ lg: cols, md: Math.max(4, Math.floor(cols / 2)), sm: 2 }}
           rowHeight={rowHeight}
-          onLayoutChange={isMobile ? undefined : handleLayoutChange}
-          dragConfig={{ handle: ".panel-drag-handle", enabled: !isMobile }}
-          resizeConfig={{ enabled: !isMobile, handles: ["se"] }}
+          onLayoutChange={(isMobile || readOnly) ? undefined : handleLayoutChange}
+          dragConfig={{ handle: ".panel-drag-handle", enabled: !isMobile && !readOnly }}
+          resizeConfig={{ enabled: !isMobile && !readOnly, handles: ["se"] }}
           margin={[4, 4]}
         >
           {layout.panels.map((panel) => (
@@ -173,6 +175,7 @@ export function CustomLayoutDashboard({
                 textOverrides={textOverrides}
                 onTextEdit={onTextEdit}
                 onRemoveTextPanel={onRemoveTextPanel}
+                readOnly={readOnly}
               />
             </div>
           ))}
@@ -198,6 +201,7 @@ function PanelRenderer({
   textOverrides,
   onTextEdit,
   onRemoveTextPanel,
+  readOnly,
 }: {
   panel: LayoutPanel;
   rows: NormalizedRow[];
@@ -212,6 +216,7 @@ function PanelRenderer({
   textOverrides?: Record<string, string>;
   onTextEdit?: (panelId: string, content: string) => void;
   onRemoveTextPanel?: (panelId: string) => void;
+  readOnly?: boolean;
 }) {
   switch (panel.type) {
     case "text":
@@ -221,8 +226,9 @@ function PanelRenderer({
           textColor={textColor}
           deviceLabels={deviceLabels}
           overrideContent={textOverrides?.[panel.id]}
-          onEdit={onTextEdit}
-          onRemove={onRemoveTextPanel}
+          onEdit={readOnly ? undefined : onTextEdit}
+          onRemove={readOnly ? undefined : onRemoveTextPanel}
+          readOnly={readOnly}
         />
       );
     case "image":
@@ -241,9 +247,10 @@ function PanelRenderer({
           deviceColors={deviceColors}
           devices={devices}
           showEventLabels={showEventLabels}
+          readOnly={readOnly}
         />
       );
-      if (panel.id.startsWith("user-chart-") && onRemoveTextPanel) {
+      if (panel.id.startsWith("user-chart-") && onRemoveTextPanel && !readOnly) {
         return (
           <div className="group relative h-full">
             {chart}
@@ -271,6 +278,7 @@ function TextPanel({
   overrideContent,
   onEdit,
   onRemove,
+  readOnly,
 }: {
   panel: TextPanelConfig;
   textColor: string;
@@ -278,6 +286,7 @@ function TextPanel({
   overrideContent?: string;
   onEdit?: (panelId: string, content: string) => void;
   onRemove?: (panelId: string) => void;
+  readOnly?: boolean;
 }) {
   const resolvedContent = panel.contentRef !== undefined && deviceLabels?.[panel.contentRef]
     ? deviceLabels[panel.contentRef]
@@ -344,7 +353,7 @@ function TextPanel({
 
   return (
     <div
-      className="group relative flex items-center h-full px-2 panel-drag-handle cursor-move"
+      className={`group relative flex items-center h-full px-2 ${readOnly ? "" : "panel-drag-handle cursor-move"}`}
       style={{
         color: textColor,
         fontSize: panel.fontSize ?? "1rem",
@@ -354,13 +363,13 @@ function TextPanel({
         justifyContent: panel.align === "center" ? "center" : panel.align === "right" ? "flex-end" : "flex-start",
       }}
       onDoubleClick={() => {
-        if (!onEdit) return;
+        if (!onEdit || readOnly) return;
         setDraft(content);
         setEditing(true);
       }}
     >
       {content}
-      {onEdit && (
+      {onEdit && !readOnly && (
         <div className="absolute top-0 right-0 hidden group-hover:flex gap-0.5 p-0.5">
           <button
             onClick={(e) => { e.stopPropagation(); setDraft(content); setEditing(true); }}
@@ -476,6 +485,7 @@ function ChartPanel({
   deviceColors,
   devices,
   showEventLabels,
+  readOnly,
 }: {
   panel: ChartPanelConfig;
   rows: NormalizedRow[];
@@ -486,6 +496,7 @@ function ChartPanel({
   deviceColors: DeviceColorMap;
   devices?: string[];
   showEventLabels: boolean;
+  readOnly?: boolean;
 }) {
   const resolved = useMemo(
     () => ({ ...panel, deviceFilter: resolveDeviceFilter(panel, devices) }),
@@ -556,7 +567,7 @@ function ChartPanel({
 
   return (
     <div
-      className="h-full rounded-lg p-2 flex flex-col panel-drag-handle cursor-move"
+      className={`h-full rounded-lg p-2 flex flex-col ${readOnly ? "" : "panel-drag-handle cursor-move"}`}
       style={{ background: surface, color: textColor }}
     >
       <h4 className="text-xs font-semibold mb-0.5 opacity-80 truncate">

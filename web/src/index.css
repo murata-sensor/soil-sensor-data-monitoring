@@ -9,6 +9,30 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
+/* View mode: remove interactive affordances */
+.view-mode .panel-drag-handle {
+  cursor: default;
+}
+.view-mode .react-resizable-handle {
+  display: none;
+}
+
+/* Print styles */
+@media print {
+  header, .print\\:hidden {
+    display: none !important;
+  }
+  body, .min-h-screen {
+    min-height: auto !important;
+  }
+  .react-resizable-handle {
+    display: none !important;
+  }
+  .panel-drag-handle {
+    cursor: default !important;
+  }
+}
+
 /* Improve touch targets on mobile */
 @media (max-width: 480px) {
   select, button, input {
