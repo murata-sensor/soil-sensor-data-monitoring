@@ -24,7 +24,7 @@ import { resolveDeviceFilter } from "../layoutConfig";
 import { BatteryGauge } from "./BatteryGauge";
 import { parseTs, type PanelSettings, type DeviceColorMap } from "../settings";
 
-const SINGLE_SERIES_METRICS = new Set(["battery_v", "air_temp_c"]);
+const SINGLE_SERIES_METRICS = new Set(["battery_v", "air_temp_c", "precip_1h_mm", "sunshine_1h_h"]);
 
 function getEventLabelYAdjust(): number {
   // Scriptable yAdjust anchored to chart height so label stays near top
@@ -509,7 +509,7 @@ function ChartPanel({
   );
 
   const annotations = useMemo(() => {
-    if (panel.showEvents === false || panel.metric === "air_temp_c") return {};
+    if (panel.showEvents === false || panel.metric === "air_temp_c" || panel.metric === "precip_1h_mm" || panel.metric === "sunshine_1h_h") return {};
     const deviceFilter = resolved.deviceFilter;
 
     // Determine data time range from datasets to exclude out-of-range events

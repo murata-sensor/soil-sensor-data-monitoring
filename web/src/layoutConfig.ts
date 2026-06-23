@@ -174,6 +174,8 @@ export function generateDeviceColumnLayout(
     { metric: "ec_bulk_dsm", title: "BulkEC[dS/m]" },
     { metric: "vwc_pct", title: "VWC[%]", yMin: 10, yMax: 70 },
     { metric: "air_temp_c", title: "Air Temperature[℃]", yMin: 10, yMax: 45 },
+    { metric: "precip_1h_mm", title: "Precipitation[mm]" },
+    { metric: "sunshine_1h_h", title: "Sunshine[h]" },
   ];
   const sensorLabels = options?.sensorLabels ?? { "1": "1", "2": "2", "3": "3" };
   const sensorColors = options?.sensorColors ?? { "1": "#0000ff", "2": "#00cc00", "3": "#cccc00" };
@@ -246,9 +248,9 @@ export function generateDeviceColumnLayout(
         title: m.title,
         metric: m.metric,
         deviceRef: col,
-        groupBy: m.metric === "air_temp_c" ? "deviceId" : "sensorNumber",
-        groupLabels: m.metric === "air_temp_c" ? undefined : sensorLabels,
-        groupColors: m.metric === "air_temp_c" ? undefined : sensorColors,
+        groupBy: (m.metric === "air_temp_c" || m.metric === "precip_1h_mm" || m.metric === "sunshine_1h_h") ? "deviceId" : "sensorNumber",
+        groupLabels: (m.metric === "air_temp_c" || m.metric === "precip_1h_mm" || m.metric === "sunshine_1h_h") ? undefined : sensorLabels,
+        groupColors: (m.metric === "air_temp_c" || m.metric === "precip_1h_mm" || m.metric === "sunshine_1h_h") ? undefined : sensorColors,
         yMin: m.yMin,
         yMax: m.yMax,
         showEvents: true,

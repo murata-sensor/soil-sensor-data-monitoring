@@ -112,7 +112,11 @@ export const SCHEMA_EXTRA_PANELS: Record<SchemaType, ThemePanel[]> = {
     { id: "sun",   title: "1h 日照 (AMeDAS)",    metric: "sunshine_1h_h", x: 0, y: 17, w: 12, h: 3 },
     { id: "batp",  title: "バッテリー残量 (%)",  metric: "battery_pct",   x: 0, y: 20, w: 12, h: 3 },
   ],
-  "remote-ftp": [],
+  "remote-ftp": [
+    { id: "airt",  title: "外気温",          metric: "air_temp_c",    x: 0, y: 11, w: 12, h: 3 },
+    { id: "prec",  title: "1h 降水量 (mm)",  metric: "precip_1h_mm",  x: 0, y: 14, w: 12, h: 3 },
+    { id: "sun",   title: "1h 日照 (h)",     metric: "sunshine_1h_h", x: 0, y: 17, w: 12, h: 3 },
+  ],
 };
 
 /**

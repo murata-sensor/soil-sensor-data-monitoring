@@ -270,7 +270,42 @@ export default function Dashboard() {
   const customLayout = useMemo(() => {
     // First check for explicitly configured layout
     const explicit = layouts.find((l) => l.sourceId === selectedSourceId);
-    if (explicit) return explicit;
+    if (explicit) {
+      // Inject precip/sunshine panels if the layout has air_temp_c but not these
+      const hasAirTemp = explicit.panels.some((p) => p.type === "chart" && p.metric === "air_temp_c");
+      const hasPrecip = explicit.panels.some((p) => p.type === "chart" && p.metric === "precip_1h_mm");
+      const hasSunshine = explicit.panels.some((p) => p.type === "chart" && p.metric === "sunshine_1h_h");
+      if (hasAirTemp && (!hasPrecip || !hasSunshine)) {
+        const augmented: import("../layoutConfig").LayoutPanel[] = [];
+        for (const panel of explicit.panels) {
+          augmented.push(panel);
+          if (panel.type === "chart" && panel.metric === "air_temp_c") {
+            const pos = panel.position;
+            if (!hasPrecip) {
+              augmented.push({
+                type: "chart", id: `precip_1h_mm-${panel.deviceRef ?? panel.id}`,
+                title: "Precipitation[mm]", metric: "precip_1h_mm",
+                deviceRef: panel.deviceRef, deviceFilter: panel.deviceFilter,
+                groupBy: "deviceId", showEvents: false,
+                position: { x: pos.x, y: pos.y + pos.h, w: pos.w, h: pos.h },
+              });
+            }
+            if (!hasSunshine) {
+              const offset = hasPrecip ? 0 : pos.h;
+              augmented.push({
+                type: "chart", id: `sunshine_1h_h-${panel.deviceRef ?? panel.id}`,
+                title: "Sunshine[h]", metric: "sunshine_1h_h",
+                deviceRef: panel.deviceRef, deviceFilter: panel.deviceFilter,
+                groupBy: "deviceId", showEvents: false,
+                position: { x: pos.x, y: pos.y + pos.h + offset, w: pos.w, h: pos.h },
+              });
+            }
+          }
+        }
+        return { ...explicit, panels: augmented };
+      }
+      return explicit;
+    }
     // For remote-ftp sources with data, auto-generate column layout
     if (selected?.schemaType === "remote-ftp" && filteredRows.length > 0) {
       const devices = Array.from(new Set(filteredRows.map((r) => r.deviceId).filter(Boolean) as string[])).sort();
@@ -308,6 +343,8 @@ export default function Dashboard() {
   }, [customLayout, panels]);
 
   const showAirTemperature = settings?.showAirTemperature ?? false;
+  const showPrecipitation = settings?.showPrecipitation ?? false;
+  const showSunshine = settings?.showSunshine ?? false;
   const showEventLabels = settings?.showEventLabels ?? true;
   const isInitialUnresolved = Boolean(user && rows === null && !selectedSourceId);
   const isResolvingSource = Boolean(user && !registryLoading && allowed.length > 0 && !selectedSourceId);
@@ -331,7 +368,11 @@ export default function Dashboard() {
       if (selected?.schemaType === "m5stack" || selected?.schemaType === "mechatrax") {
         base = panels;
       } else {
-        base = panels.filter((p) => showAirTemperature || p.metric !== "air_temp_c");
+        base = panels.filter((p) =>
+          (showAirTemperature || p.metric !== "air_temp_c")
+          && (showPrecipitation || p.metric !== "precip_1h_mm")
+          && (showSunshine || p.metric !== "sunshine_1h_h")
+        );
       }
       // Merge user-created chart panels
       const userCharts: ThemePanel[] = (settings?.userChartPanels ?? []).map((uc) => ({
@@ -347,7 +388,7 @@ export default function Dashboard() {
       }));
       return [...base, ...userCharts];
     },
-    [panels, showAirTemperature, selected, settings?.userChartPanels],
+    [panels, showAirTemperature, showPrecipitation, showSunshine, selected, settings?.userChartPanels],
   );
 
   const visibleCustomLayout = useMemo(() => {
@@ -364,11 +405,15 @@ export default function Dashboard() {
       position: { x: uc.x, y: uc.y, w: uc.w, h: uc.h },
     }));
     const allPanels = [...customLayout.panels, ...userTextPanels, ...userChartPanels];
-    const filtered = showAirTemperature
+    const hiddenMetrics = new Set<string>();
+    if (!showAirTemperature) hiddenMetrics.add("air_temp_c");
+    if (!showPrecipitation) hiddenMetrics.add("precip_1h_mm");
+    if (!showSunshine) hiddenMetrics.add("sunshine_1h_h");
+    const filtered = hiddenMetrics.size === 0
       ? allPanels
-      : allPanels.filter((panel) => panel.type !== "chart" || panel.metric !== "air_temp_c");
+      : allPanels.filter((panel) => panel.type !== "chart" || !hiddenMetrics.has(panel.metric));
     return { ...customLayout, panels: filtered };
-  }, [customLayout, showAirTemperature, settings?.userTextPanels, settings?.userChartPanels]);
+  }, [customLayout, showAirTemperature, showPrecipitation, showSunshine, settings?.userTextPanels, settings?.userChartPanels]);
 
   const skeletonCount = useMemo(() => {
     if (visibleCustomLayout) return visibleCustomLayout.panels.length;
@@ -1319,6 +1364,8 @@ function SettingsModal({ settings, panels, rows, schemaType, onSave, onClose, on
   const [panelSettings, setPanelSettings] = useState(settings.panelSettings);
   const [deviceColors, setDeviceColors] = useState(settings.deviceColors);
   const [showAirTemperature, setShowAirTemperature] = useState(settings.showAirTemperature ?? false);
+  const [showPrecipitation, setShowPrecipitation] = useState(settings.showPrecipitation ?? false);
+  const [showSunshine, setShowSunshine] = useState(settings.showSunshine ?? false);
   const [showEventLabels, setShowEventLabels] = useState(settings.showEventLabels ?? true);
   const [bgColor, setBgColor] = useState(settings.bgColor ?? "");
   const [chartBgColor, setChartBgColor] = useState(settings.chartBgColor ?? "");
@@ -1506,14 +1553,32 @@ function SettingsModal({ settings, panels, rows, schemaType, onSave, onClose, on
           <h3 className="font-semibold text-sm mb-2 text-slate-700">表示設定</h3>
           <div className="space-y-2">
             {schemaType === "remote-ftp" && (
-              <label className="inline-flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={showAirTemperature}
-                  onChange={(e) => setShowAirTemperature(e.target.checked)}
-                />
-                <span>air temperature（外気温）を表示</span>
-              </label>
+              <>
+                <label className="inline-flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={showAirTemperature}
+                    onChange={(e) => setShowAirTemperature(e.target.checked)}
+                  />
+                  <span>外気温を表示</span>
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={showPrecipitation}
+                    onChange={(e) => setShowPrecipitation(e.target.checked)}
+                  />
+                  <span>降水量を表示</span>
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={showSunshine}
+                    onChange={(e) => setShowSunshine(e.target.checked)}
+                  />
+                  <span>日照時間を表示</span>
+                </label>
+              </>
             )}
             <label className="inline-flex items-center gap-2 text-sm">
               <input
@@ -1671,7 +1736,7 @@ function SettingsModal({ settings, panels, rows, schemaType, onSave, onClose, on
               キャンセル
             </button>
             <button
-              onClick={() => onSave({ panelSettings, deviceColors, showAirTemperature, showEventLabels, bgColor: bgColor || undefined, chartBgColor: chartBgColor || undefined, localEvents })}
+              onClick={() => onSave({ panelSettings, deviceColors, showAirTemperature, showPrecipitation, showSunshine, showEventLabels, bgColor: bgColor || undefined, chartBgColor: chartBgColor || undefined, localEvents })}
               className="px-4 py-1 text-sm rounded bg-indigo-600 text-white hover:bg-indigo-700">
               保存
             </button>

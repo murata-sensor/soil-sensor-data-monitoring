@@ -53,6 +53,8 @@ export interface UserSettings {
   deviceColors: DeviceColorMap;
   ftpSheetName: FtpSheetName;
   showAirTemperature: boolean;
+  showPrecipitation: boolean;
+  showSunshine: boolean;
   showEventLabels: boolean;
   /** Substrate type per source (keyed by sourceId). */
   substrateTypes: Record<string, SubstrateType>;
@@ -94,6 +96,8 @@ const DEFAULT_SETTINGS: UserSettings = {
   deviceColors: {},
   ftpSheetName: "sensor_raw",
   showAirTemperature: false,
+  showPrecipitation: false,
+  showSunshine: false,
   showEventLabels: true,
   substrateTypes: {},
   selectedSourceId: null,

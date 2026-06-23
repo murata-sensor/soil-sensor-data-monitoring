@@ -19,7 +19,7 @@ describe("SCHEMA_EXTRA_PANELS", () => {
   it("has entries for all schema types", () => {
     expect(SCHEMA_EXTRA_PANELS.m5stack.length).toBeGreaterThan(0);
     expect(SCHEMA_EXTRA_PANELS.mechatrax.length).toBeGreaterThan(0);
-    expect(SCHEMA_EXTRA_PANELS["remote-ftp"]).toEqual([]);
+    expect(SCHEMA_EXTRA_PANELS["remote-ftp"].length).toBeGreaterThan(0);
   });
   it("extra panels also fit the 12-column grid", () => {
     for (const list of Object.values(SCHEMA_EXTRA_PANELS)) {
