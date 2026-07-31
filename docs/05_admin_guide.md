@@ -39,7 +39,7 @@ viewer ロールのユーザーは **`acl` に行を入れない限り 1 つも�
 | --- | --- | --- |
 | `sourceId` | `src-m5-01` | 内部 ID。英数字+ハイフン、後から変えにくい |
 | `displayName` | `M5 A棟` | ドロップダウンに出る表示名 |
-| `schemaType` | `m5stack` / `mechatrax` / `remote-ftp` | データ形式 |
+| `schemaType` | `m5stack` / `mechatrax` / `pc-serial` / `remote-ftp` | データ形式 |
 | `spreadsheetId` | `1abc...xyz` | 実データのスプレッドシート ID |
 | `sheetName` | `soil_sensor` | 実データのタブ名 |
 | `headerRow` | `1` | ヘッダ行（通常 1） |

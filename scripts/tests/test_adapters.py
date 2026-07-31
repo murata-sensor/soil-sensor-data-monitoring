@@ -124,3 +124,41 @@ def test_unknown_schema_raises():
     import pytest
     with pytest.raises(ValueError):
         to_normalized("nope", [["a"], ["1"]])
+
+
+PC_HEADER_ROW = [
+    "Date", "SerialNumber", "Battery(V)", "Temperature(degC)",
+    "VWC(%)", "VWC Coconut Peat(%)", "VWC Rock Wool(%)",
+    "EC bulk(dS/m)", "EC pore(dS/m)", "EC pore Coco(dS/m)",
+]
+PC_DATA_ROW = [
+    "2026-07-31 14:30:00", "24107928", "3.311", "21.5",
+    "45.2", "44.1", "43.8",
+    "0.51", "1.82", "",
+]
+
+
+def test_pc_serial_headers_and_basic_mapping():
+    rows = to_normalized("pc-serial", [PC_HEADER_ROW, PC_DATA_ROW])
+    assert len(rows) == 1
+    r = rows[0]
+    assert r.ts == "2026-07-31 14:30:00"
+    assert r.device_id == "24107928"
+    assert r.battery_v == 3.311
+    assert r.temperature_c == 21.5
+    assert r.vwc_pct == 45.2
+    assert r.vwc_coco_pct == 44.1
+    assert r.vwc_rock_pct == 43.8
+    assert r.ec_bulk_dsm == 0.51
+    assert r.ec_pore_dsm == 1.82
+    assert r.ec_pore_coco_dsm is None  # blank cell
+    # No wireless link, so these columns do not exist for this schema
+    assert r.rssi_dbm is None
+    assert r.error_flag is None
+
+
+def test_pc_serial_keeps_sensors_apart_by_serial_number():
+    second = list(PC_DATA_ROW)
+    second[1] = "24107929"
+    rows = to_normalized("pc-serial", [PC_HEADER_ROW, PC_DATA_ROW, [], second])
+    assert [r.device_id for r in rows] == ["24107928", "24107929"]

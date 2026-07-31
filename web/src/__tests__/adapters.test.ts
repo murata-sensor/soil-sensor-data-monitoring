@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { toNormalized } from "../adapters";
 import { HEADER_MAP as M5_HEADERS } from "../adapters/m5stack";
 import { HEADER_MAP as MX_HEADERS } from "../adapters/mechatrax";
+import { HEADER_MAP as PC_HEADERS } from "../adapters/pcSerial";
 import { resolveAllowedSources } from "../api/sheets";
 import type { AclRow, SourceRow, UserRow } from "../types";
 
@@ -39,6 +40,17 @@ const MX_ROW = [
   "62.6", "100", "91",
   "0.243", "0.745", "",
   "29.3", "0", "0.6",
+];
+
+const PC_HEADER = [
+  "Date", "SerialNumber", "Battery(V)", "Temperature(degC)",
+  "VWC(%)", "VWC Coconut Peat(%)", "VWC Rock Wool(%)",
+  "EC bulk(dS/m)", "EC pore(dS/m)", "EC pore Coco(dS/m)",
+];
+const PC_ROW = [
+  "2026-07-31 14:30:00", "24107928", "3.311", "21.5",
+  "45.2", "44.1", "43.8",
+  "0.51", "1.82", "",
 ];
 
 describe("m5stack adapter", () => {
@@ -88,8 +100,32 @@ describe("mechatrax adapter", () => {
   });
 });
 
-describe("remote-ftp adapter", () => {
-  it("reads published columns", () => {
+describe("pc-serial adapter", () => {
+  it("maps the header row to normalized fields", () => {
+    const rows = toNormalized("pc-serial", [PC_HEADER, PC_ROW]);
+    expect(rows).toHaveLength(1);
+    const r = rows[0];
+    expect(r.ts).toBe("2026-07-31 14:30:00");
+    expect(r.deviceId).toBe("24107928");
+    expect(r.battery_v).toBeCloseTo(3.311);
+    expect(r.temperature_c).toBeCloseTo(21.5);
+    expect(r.vwc_pct).toBeCloseTo(45.2);
+    expect(r.ec_bulk_dsm).toBeCloseTo(0.51);
+    expect(r.ec_pore_coco_dsm).toBeUndefined();
+  });
+  it("has no wireless-only columns", () => {
+    expect("WiFi RSI(dBm)" in PC_HEADERS).toBe(false);
+    expect("Error flag" in PC_HEADERS).toBe(false);
+  });
+  it("keeps sensors on one bus apart by serial number", () => {
+    const second = [...PC_ROW];
+    second[1] = "24107929";
+    const rows = toNormalized("pc-serial", [PC_HEADER, PC_ROW, [], second]);
+    expect(rows.map((r) => r.deviceId)).toEqual(["24107928", "24107929"]);
+  });
+});
+
+describe("remote-ftp adapter", () => {  it("reads published columns", () => {
     const rows = toNormalized("remote-ftp", [
       ["date", "siteId", "addr", "number", "battery1", "battery2", "bulk_ec", "vwc"],
       ["2026-06-15 09:05:00+09:00", "site-a", "fac", "1", "3.45", "2.812", "0.860", "57.5"],

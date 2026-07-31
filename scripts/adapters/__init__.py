@@ -11,12 +11,13 @@ the first row is the header row; subsequent rows are data.
 
 from __future__ import annotations
 
-from . import m5stack, mechatrax, remote_ftp
+from . import m5stack, mechatrax, pc_serial, remote_ftp
 from .normalized import NormalizedRow
 
 ADAPTERS = {
     m5stack.KEY: m5stack,
     mechatrax.KEY: mechatrax,
+    pc_serial.KEY: pc_serial,
     remote_ftp.KEY: remote_ftp,
 }
 

@@ -7,7 +7,7 @@ v2 では GAS プロジェクトを **2 種類** に分けて使います:
 
 | 種類 | バインドするスプレッドシート | 配置するファイル | 用途 |
 | ---- | ---------------------------- | ---------------- | ---- |
-| **(A) 受信用** | M5Stack / Mechatrax の **各データ用スプレッドシート** に1つずつ | `m5stack_receiver.gs` または `mechatrax_receiver.gs`（+ `amedas_fetcher.gs`） | デバイスからの POST を受けて行を追記 |
+| **(A) 受信用** | M5Stack / Mechatrax / PC の **各データ用スプレッドシート** に1つずつ | `m5stack_receiver.gs` / `mechatrax_receiver.gs`（+ `amedas_fetcher.gs`）/ `pc_serial_receiver.gs` | デバイスからの POST を受けて行を追記 |
 | **(B) Registry 用** | 01 で作った **Registry スプレッドシート** に 1 つ | `admin_api.gs`、（`accessMode=proxy` を使う場合のみ）`read_proxy.gs` | 管理画面の書き込み / proxy 読み取り |
 | **(C) アラート送信用** | **FTP データ用スプレッドシート** に 1 つ | `alert_mailer.gs` | `alerts` シートを監視してメール送信 |
 
@@ -149,6 +149,73 @@ Mechatrax データ用スプレッドシート 1 つに対して、この設定�
 > 取得失敗時はそれらの列だけ空欄で書き込みは継続する。
 
 書き込まれる列（A〜AE）は SPEC §4.2 mechatrax を参照。
+
+---
+
+## A''. 受信用 GAS（PC シリアルロガー / pc-serial）
+
+PC に直接つないだ土壌センサ（SLT5005〜SLT5009）の測定値を受け取ります。
+送信側は [soil-sensor-samples-python](https://github.com/murata-sensor/soil-sensor-samples-python) の
+`examples/continuous_log.py --upload-url ...` です。
+
+### A''-1. ファイルを配置
+
+0-1 〜 0-2 の手順で **PC ロガー用のデータスプレッドシート** に紐付けて、`gas/pc_serial_receiver.gs` を貼る。
+
+### A''-2. スクリプトプロパティ
+
+| キー | 値 | 必須 |
+| --- | --- | --- |
+| `INGEST_TOKEN` | PC 側と共有する任意のランダム文字列 | 必須 |
+| `PC_SERIAL_TARGET_SHEET` | 書き込み先シート名。デフォルト `soil_sensor` | 任意 |
+
+### A''-3. WebApp デプロイ
+
+0-4 の手順でデプロイ → ウェブアプリ URL を控える。これを PC 側で指定する。
+
+```powershell
+$env:SOIL_UPLOAD_TOKEN = "<INGEST_TOKEN>"
+python examples/continuous_log.py --product SLT5009 --port COM3 --address 1,2 `
+    --interval 300 --out data.csv `
+    --upload-url https://script.google.com/macros/s/XXXXX/exec
+```
+
+ヘッダ行（A〜J）は初回 POST 時に自動作成されます。
+
+### A''-4. POST フォーマット
+
+1 台分：
+
+```json
+{
+  "token": "<INGEST_TOKEN>",
+  "serialNumber": "24107928",
+  "ts": "2026-07-31T14:30:00+09:00",
+  "battery_v": 3.311,
+  "temperature_c": 21.5,
+  "vwc_pct": 45.2,
+  "vwc_coco_pct": 44.1,
+  "vwc_rock_pct": 43.8,
+  "ec_bulk_dsm": 0.51,
+  "ec_pore_dsm": 1.82,
+  "ec_pore_coco_dsm": 1.75
+}
+```
+
+同じバス上の複数台をまとめて送る場合（`continuous_log.py` はこちらを使います）：
+
+```json
+{ "token": "<INGEST_TOKEN>", "rows": [ { "serialNumber": "...", "...": 0 } ] }
+```
+
+センサの区別は `serialNumber` で行うため、1 本のバスの複数センサを 1 シートに
+まとめられます（ダッシュボードでは自動的に別系列になります）。
+
+書き込まれる列（A〜J）: `Date / SerialNumber / Battery(V) / Temperature(degC) / VWC(%) / VWC Coconut Peat(%) / VWC Rock Wool(%) / EC bulk(dS/m) / EC pore(dS/m) / EC pore Coco(dS/m)`
+
+> **送信間隔の目安**: 1 POST ごとにフィルタ再作成が入るため 1〜2 秒かかります。
+> GAS の無料枠（スクリプト実行時間 90 分/日）に収めるため、`--interval` は
+> **5 分以上** を推奨します。
 
 ---
 

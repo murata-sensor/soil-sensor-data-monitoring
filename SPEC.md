@@ -9,13 +9,14 @@
 GitHub Pages 上の SPA で可視化する。閲覧は Google アカウントで認証し、
 **アカウントごとに参照できるスプレッドシートを個別制御**する。
 
-対応する3系統のシステムを単一フロントエンドで扱えるようにする：
+対応する4系統のシステムを単一フロントエンドで扱えるようにする：
 
 | ID | 系統 | 書込経路 | スプレッドシートのオーナー |
 | --- | --- | --- | --- |
 | `remote-ftp` | リモート案件（FTP 経由センサ） | GitHub Actions の Python が FTP→正規化→Sheets API で追記 | 本プロジェクト側サービスアカウント |
 | `m5stack` | M5Stack ロガー | デバイスから GAS WebApp に HTTP POST | **案件ごとに別の Google アカウント**（既存運用のスプレッドシート） |
 | `mechatrax` | Mechatrax Raspberry Pi ロガー | RasPi から GAS WebApp に HTTP POST、GAS が GPS→アメダス天気を付加 | **案件ごとに別の Google アカウント**（既存運用のスプレッドシート） |
+| `pc-serial` | PC 直結シリアルロガー（soil-sensor-samples-python） | PC から GAS WebApp に HTTP POST | 案件ごと（選択可） |
 
 `m5stack` と `mechatrax` については **既存スプレッドシート（過去データ含む）をそのまま参照可能**
 にすることが要件。本リポジトリで新規に作るのはレジストリ（コントロールプレーン）と SPA／取り込みスクリプトのみ。
@@ -40,7 +41,9 @@ GitHub Pages 上の SPA で可視化する。閲覧は Google アカウントで
                   │                                                            │
   データソース ──┼── M5Stack ────────► GAS WebApp ───────────► Sheets API ──┤── 各案件の Spreadsheet
                   │                                                            │   （オーナーは案件主／本プロジェクト）
-                  └── Mechatrax RasPi ► GAS WebApp + AMeDAS ─► Sheets API ──┘
+                  ├── Mechatrax RasPi ► GAS WebApp + AMeDAS ─► Sheets API ──┤
+                  │                                                            │
+                  └── PC シリアル ─────► GAS WebApp ───────────► Sheets API ──┘
 
                        ┌──────────────────────────────────────────────┐
                        │ Registry Spreadsheet（本プロジェクト所有）   │
@@ -118,8 +121,21 @@ AC 外気温, AD 1hの降水量, AE 1hの日照時間
 - 座標 `F`、`MCC/MNC/cellId` 等の通信識別子は **フロントには出さない**（マスキング）。
   解析用には粒度を落とした集約のみ表示。
 
-#### `remote-ftp`（既存・現行スクリプト）
+#### `pc-serial`（列レイアウト準拠：A〜J）
 
+```
+A Date, B SerialNumber, C Battery(V), D Temperature(degC),
+E VWC(%), F VWC Coconut Peat(%), G VWC Rock Wool(%),
+H EC bulk(dS/m), I EC pore(dS/m), J EC pore Coco(dS/m)
+```
+
+- `ts = A`、`deviceId = B`。書き込みは `gas/pc_serial_receiver.gs`。
+- 送信元は [soil-sensor-samples-python](https://github.com/murata-sensor/soil-sensor-samples-python)
+  の `examples/continuous_log.py --upload-url ...`（SLT5005〜SLT5009 を RS-232C / RS-485 / SDI-12 で読む PC）。
+- `m5stack` と同じ測定項目を扱うが、有線接続なので `Error flag` / `WiFi RSI(dBm)` 列を持たない。
+- 1 本のバス上の複数センサは `SerialNumber` で区別するため、**1 シートに混在させてよい**。
+
+#### `remote-ftp`（既存・現行スクリプト）
 - 形式: 旧 35 列 CSV（`requirements/legacy_ftp_exe.py` 準拠）。
 - スキーマアダプタは既存の `scripts/sensor_parser.py` を流用。
 - 書き込み先は本プロジェクト所有のスプレッドシート。
@@ -186,7 +202,7 @@ SPA は **このレジストリのみ ID を環境変数で持つ**。実デー�
 | --- | --- | --- |
 | `sourceId` | `src-001` | 内部ID（英数字） |
 | `displayName` | `A 圃場 M5Stack` | UI 表示名（PIIにならないよう注意） |
-| `schemaType` | `m5stack` / `mechatrax` / `remote-ftp` | アダプタ選択 |
+| `schemaType` | `m5stack` / `mechatrax` / `pc-serial` / `remote-ftp` | アダプタ選択 |
 | `spreadsheetId` | `1abc...` | 実データ Spreadsheet ID |
 | `sheetName` | `soil_sensor` | タブ名 |
 | `headerRow` | `1` | ヘッダ行番号 |
@@ -360,13 +376,14 @@ SPA は **このレジストリのみ ID を環境変数で持つ**。実デー�
   - 共通: VWC ライン / Bulk EC ライン / 気温・降水複合 / バッテリー監視カード。
   - `m5stack` 追加: Error flag / WiFi RSSI 系列。
   - `mechatrax` 追加: 外気温・1h 降水・1h 日照（AMeDAS 由来）／バッテリー残量%。
+  - `pc-serial` 追加: なし（共通レイアウトのみ。`SerialNumber` ごとに系列分割）。
   - `remote-ftp` 追加: 朝9時抽出タブ（`sensor_9am` シート切替）+ イベント注釈縦線。
 - **レスポンシブ対応**: モバイルでは 2 カラム自動スタック。ドラッグ・リサイズ無効化。
 - CSV ダウンロード：現在表示中のソースの期間フィルタ済みデータを正規化モデルとして書き出す。
 
 ## 8. スキーマアダプタ実装方針
 
-- TypeScript 側 `web/src/adapters/{m5stack,mechatrax,remoteFtp}.ts` を新設。
+- TypeScript 側 `web/src/adapters/{m5stack,mechatrax,pcSerial,remoteFtp}.ts` を新設。
   - 入力: Sheets API `values.get` の `string[][]`（ヘッダ＋データ行）
   - 出力: `NormalizedRow[]`（§4.1）
 - 各アダプタは「**ヘッダ名 → 正規化キー**」の対応表で実装し、列順変動に頑健にする。
@@ -384,6 +401,7 @@ SPA は **このレジストリのみ ID を環境変数で持つ**。実デー�
 | `remote-ftp` | Python on GitHub Actions | `scripts/ingest_ftp.py`（既存） |
 | `m5stack` | GAS WebApp | `gas/m5stack_receiver.gs` |
 | `mechatrax` | GAS WebApp + AMeDAS フェッチャ | `gas/mechatrax_receiver.gs`（新規）, `gas/amedas_fetcher.gs`（新規） |
+| `pc-serial` | GAS WebApp | `gas/pc_serial_receiver.gs` |
 
 - GAS 側はいずれも `Script Properties` の `INGEST_TOKEN` でデバイス認証。
 - 書込スプレッドシートの ID は GAS の `Script Properties` に保持（リポジトリには出さない）。

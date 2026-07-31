@@ -1,6 +1,6 @@
 # Soil Sensor Data Monitoring
 
-土壌センサ／環境ロガーの 3 系統（**リモートFTP / M5Stack / Mechatrax RasPi**）から
+土壌センサ／環境ロガーの 4 系統（**リモートFTP / M5Stack / Mechatrax RasPi / PC シリアル**）から
 得られたデータを Google Spreadsheet に蓄積し、GitHub Pages 上の SPA で可視化するシステム。
 **Google アカウントごとに、参照できるスプレッドシートを個別に制御**する。
 
@@ -9,6 +9,8 @@
 
 主な特徴:
 - **マルチデータソース**: 案件ごとに異なる Spreadsheet をレジストリで一元管理
+- **PC 直結ロガー対応**: [soil-sensor-samples-python](https://github.com/murata-sensor/soil-sensor-samples-python) の
+  `continuous_log.py --upload-url ...` から直接取り込み（`pc-serial` スキーマ）
 - **カスタムレイアウト**: デバイス列配置・ゲージ・テキスト・画像パネルを JSON で自由にレイアウト
 - **編集/表示モード**: 編集モードでレイアウト調整、表示モードで印刷・プレゼン向けクリーン表示
 - **マルチセンサ対応**: `sensorNumber` による深度別表示・色分け
@@ -39,7 +41,7 @@
 │   └── layout_example.json # レイアウト JSON テンプレート
 ├── scripts/                # FTP→Sheets/Drive 取り込み（Python, GitHub Actions で実行）
 │   └── adapters/           # 正規化アダプタ（Python）
-├── gas/                    # Google Apps Script（M5Stack/Mechatrax受信・気象取得・管理API・アラート送信）
+├── gas/                    # Google Apps Script（M5Stack/Mechatrax/PC受信・気象取得・管理API・アラート送信）
 ├── web/                    # React + Vite + TypeScript フロントエンド
 │   └── src/adapters/       # 正規化アダプタ（TypeScript）
 └── .github/workflows/      # CI / 取り込み / Pages デプロイ
@@ -48,7 +50,7 @@
 ## クイックスタート
 
 1. [docs/01_google_setup.md](./docs/01_google_setup.md): Google Cloud プロジェクトとサービスアカウント作成、Spreadsheet 初期化。
-2. [docs/04_gas_setup.md](./docs/04_gas_setup.md): GAS（M5Stack/Mechatrax受信・気象取得・管理API）デプロイ。
+2. [docs/04_gas_setup.md](./docs/04_gas_setup.md): GAS（M5Stack/Mechatrax/PC受信・気象取得・管理API）デプロイ。
 3. [docs/02_github_actions.md](./docs/02_github_actions.md): Secrets 登録と FTP 取り込み Workflow を有効化。
 4. [docs/03_pages_deploy.md](./docs/03_pages_deploy.md): GitHub Pages を有効化してフロントをデプロイ。
 5. [docs/05_admin_guide.md](./docs/05_admin_guide.md): 管理者画面の使い方・レイアウトカスタマイズ。
