@@ -24,7 +24,7 @@ import { ConsentRequiredError, requestConsentToken, signOut } from "../auth/goog
 import {
   type DateRangeType, type DeviceColorMap, type LayoutPreset,
   type PanelSettings, type UserChartPanel, type UserSettings,
-  dateRangeToMs, loadSettings, parseTs, saveSettings,
+  dateRangeToMs, loadSettings, parseTs, saveSettings, withSourceLayout,
 } from "../settings";
 import type { LayoutConfig, TextPanelConfig } from "../layoutConfig";
 import { generateDeviceColumnLayout } from "../layoutConfig";
@@ -429,26 +429,35 @@ export default function Dashboard() {
   // Merge saved layout with defaults: only keep items that match current panels,
   // and fill in missing panels from their default positions.
   const currentLayout: LayoutItem[] = useMemo(() => {
-    if (!settings?.layout) return defaultLayout;
-    const savedMap = new Map(settings.layout.map((l) => [l.i, l]));
+    const saved = selectedSourceId ? settings?.layoutsBySource?.[selectedSourceId] : undefined;
+    if (!saved) return defaultLayout;
+    const savedMap = new Map(saved.map((l) => [l.i, l]));
     return visiblePanels.map((p) => {
-      const saved = savedMap.get(p.id);
-      if (saved) return { ...saved, minW: 3, minH: 2 };
+      const item = savedMap.get(p.id);
+      if (item) return { ...item, minW: 3, minH: 2 };
       return { i: p.id, x: p.x, y: p.y, w: p.w, h: p.h, minW: 3, minH: 2 };
     });
-  }, [settings?.layout, defaultLayout, visiblePanels]);
+  }, [settings?.layoutsBySource, selectedSourceId, defaultLayout, visiblePanels]);
 
   const handleLayoutChange = useCallback((layout: Layout) => {
     if (!settings) return;
     updateSettings({
-      layout: layout.map(({ i, x, y, w, h }) => ({ i, x, y, w, h })),
+      layoutsBySource: withSourceLayout(
+        settings.layoutsBySource,
+        selectedSourceId,
+        layout.map(({ i, x, y, w, h }) => ({ i, x, y, w, h })),
+      ),
     });
-  }, [settings, updateSettings]);
+  }, [settings, selectedSourceId, updateSettings]);
 
   const handleResetLayout = useCallback(() => {
-    updateSettings({ layout: null, userTextPanels: [], userChartPanels: [], textOverrides: {} });
+    if (!settings) return;
+    updateSettings({
+      layoutsBySource: withSourceLayout(settings.layoutsBySource, selectedSourceId, null),
+      userTextPanels: [], userChartPanels: [], textOverrides: {},
+    });
     setCustomLayoutResetKey((k) => k + 1);
-  }, [updateSettings]);
+  }, [settings, selectedSourceId, updateSettings]);
 
   const handleTextEdit = useCallback((panelId: string, content: string) => {
     if (!settings) return;
@@ -485,7 +494,7 @@ export default function Dashboard() {
       id: crypto.randomUUID(),
       name,
       createdAt: new Date().toISOString(),
-      layout: settings.layout,
+      layout: selectedSourceId ? settings.layoutsBySource[selectedSourceId] ?? null : null,
       sourceId: selectedSourceId,
       ftpSheetName: settings.ftpSheetName,
       substrateTypes: { ...settings.substrateTypes },
@@ -498,7 +507,7 @@ export default function Dashboard() {
 
   const handleLoadPreset = useCallback((preset: LayoutPreset) => {
     updateSettings({
-      layout: preset.layout,
+      layoutsBySource: withSourceLayout(settings!.layoutsBySource, preset.sourceId, preset.layout),
       selectedSourceId: preset.sourceId,
       ftpSheetName: preset.ftpSheetName,
       substrateTypes: { ...settings!.substrateTypes, ...preset.substrateTypes },
@@ -629,7 +638,9 @@ export default function Dashboard() {
                         [selected.sourceId]: val,
                       },
                       // Reset layout when switching substrate to avoid stale panel ids
-                      layout: null,
+                      layoutsBySource: withSourceLayout(
+                        settings!.layoutsBySource, selected.sourceId, null,
+                      ),
                     });
                   }}
                   className="border rounded px-2 py-1 bg-white text-xs sm:text-sm"

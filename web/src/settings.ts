@@ -49,7 +49,8 @@ export interface LayoutPreset {
 export interface UserSettings {
   dateRange: DateRange;
   panelSettings: Record<string, PanelSettings>; // keyed by panel id
-  layout: LayoutItem[] | null; // null = use default
+  /** Grid layout per source id. A missing entry means "use the schema default". */
+  layoutsBySource: Record<string, LayoutItem[]>;
   deviceColors: DeviceColorMap;
   ftpSheetName: FtpSheetName;
   showAirTemperature: boolean;
@@ -92,7 +93,7 @@ export interface UserChartPanel {
 const DEFAULT_SETTINGS: UserSettings = {
   dateRange: { type: "last7d" },
   panelSettings: {},
-  layout: null,
+  layoutsBySource: {},
   deviceColors: {},
   ftpSheetName: "sensor_raw",
   showAirTemperature: false,
@@ -112,11 +113,45 @@ function storageKey(email: string): string {
   return `soil-sensor-settings-${email.toLowerCase()}`;
 }
 
+/** Settings shape before layouts were stored per source. */
+interface LegacySettings {
+  layout?: LayoutItem[] | null;
+}
+
+/**
+ * Moves the single shared layout of the old format under the source it was
+ * last used with, so it no longer leaks into every other source.
+ */
+function migrate(stored: UserSettings & LegacySettings): UserSettings {
+  const { layout, ...settings } = stored;
+  const sourceId = settings.selectedSourceId;
+  if (!layout?.length || !sourceId || settings.layoutsBySource[sourceId]) {
+    return settings;
+  }
+  return {
+    ...settings,
+    layoutsBySource: { ...settings.layoutsBySource, [sourceId]: layout },
+  };
+}
+
+/** Replaces one source's layout, or drops it when `layout` is null/empty. */
+export function withSourceLayout(
+  layoutsBySource: Record<string, LayoutItem[]>,
+  sourceId: string | null,
+  layout: LayoutItem[] | null,
+): Record<string, LayoutItem[]> {
+  if (!sourceId) return layoutsBySource;
+  const next = { ...layoutsBySource };
+  if (layout?.length) next[sourceId] = layout;
+  else delete next[sourceId];
+  return next;
+}
+
 export function loadSettings(email: string): UserSettings {
   try {
     const raw = localStorage.getItem(storageKey(email));
     if (!raw) return { ...DEFAULT_SETTINGS };
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    return migrate({ ...DEFAULT_SETTINGS, ...JSON.parse(raw) });
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
