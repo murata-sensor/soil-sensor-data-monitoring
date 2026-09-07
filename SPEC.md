@@ -407,7 +407,7 @@ SPA は **このレジストリのみ ID を環境変数で持つ**。実デー�
 - 書込スプレッドシートの ID は GAS の `Script Properties` に保持（リポジトリには出さない）。
 - M5Stack / Mechatrax の **既存運用スプレッドシートに後付けで追記する**ことも可能（GAS を当該スプレッドシートに紐付けて公開）。
 
-### 9.1 アラート機能（センサ異常・電池残量低下）
+### 9.1 アラート機能（センサ異常・電池残量低下・データ受信停止）
 
 FTP 取り込み時にアラート条件を検知し、同じスプレッドシートの `alerts` シートに書き込む。
 GAS トリガー（`gas/alert_mailer.gs`）が `alerts` シートを監視し、新規行を検知してメール送信する。
@@ -436,13 +436,25 @@ GAS トリガー（`gas/alert_mailer.gs`）が `alerts` シートを監視し、
 
 > `alert_rules` シートが存在しない、または有効なルールが 0 件の場合は上記と同等のデフォルトルールが適用される。
 
+#### `monitored_sensors` シート（データ受信停止監視）
+
+| 列 | 型 | 説明 |
+| --- | --- | --- |
+| `enabled` | `TRUE` / `FALSE` | `FALSE` で監視を無効化 |
+| `addr` | string | `sensor_raw` のデバイスアドレス |
+| `number` | string | `sensor_raw` のセンサ番号 |
+| `max_silence_hours` | number | 許容する無通信時間（推奨: 24） |
+| `message` | string | メール本文に表示するメッセージ |
+
+日次取り込み時に `sensor_9am` の履歴と当日取得データから端末別の最終受信時刻を求める。許容時間を超えた端末は `data_missing` として通知する。同じ最終受信時刻に対する通知は1回に抑止し、受信復旧後の再停止は新たに通知する。シートが存在しない、または有効な行がない場合は停止監視を行わない。
+
 #### `alerts` シートスキーマ
 
 | 列 | 型 | 説明 |
 | --- | --- | --- |
 | `timestamp` | ISO8601 (JST) | センサデータの計測時刻 |
 | `detected_at` | ISO8601 (JST) | アラート検知日時 |
-| `alert_type` | `sensor_fault` / `low_battery` | アラート種別 |
+| `alert_type` | `sensor_fault` / `low_battery` / `data_missing` | アラート種別 |
 | `addr` | string | デバイスアドレス |
 | `sensor_number` | string | センサ番号 |
 | `details` | string | 詳細メッセージ |

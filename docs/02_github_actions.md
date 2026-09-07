@@ -73,7 +73,7 @@ GitHub Actions とは「GitHub が毎日決まった時刻に Python スクリ�
 成功すると:
 
 - FTP用スプレッドシートの `sensor_raw` / `sensor_9am` シートに新しい行が追加される
-- センサ異常値や電池残量低下が検知された場合は `alerts` シートに行が追加される（メール通知は [04_gas_setup.md](04_gas_setup.md) のアラート設定が必要）
+- センサ異常値、電池残量低下、設定したセンサーのデータ受信停止が検知された場合は `alerts` シートに行が追加される（メール通知は [04_gas_setup.md](04_gas_setup.md) のアラート設定が必要）
 - `DRIVE_BACKUP_FOLDER_ID` を設定した場合は、Drive フォルダにも CSV が積み上がる
 - 以降は毎日 **09:30 JST**（UTC 00:30）に自動実行される
 

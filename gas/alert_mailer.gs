@@ -176,7 +176,8 @@ function _cell(row, idx) {
 function _getAlertTypeLabels() {
   var defaults = {
     'sensor_fault': 'センサ異常',
-    'low_battery': '電池残量低下'
+    'low_battery': '電池残量低下',
+    'data_missing': 'データ受信停止'
   };
 
   try {
@@ -205,7 +206,7 @@ function _getAlertTypeLabels() {
       }
     }
 
-    return Object.keys(labels).length > 0 ? labels : defaults;
+    return Object.assign(defaults, labels);
   } catch (e) {
     Logger.log('Failed to read alert_rules: ' + e);
     return defaults;

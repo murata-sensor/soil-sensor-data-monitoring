@@ -7,9 +7,12 @@ from scripts.alerts import (
     DEFAULT_RULES,
     AlertResult,
     AlertRule,
+    MonitoredSensor,
     check_alerts,
+    check_missing_data,
     is_smtp_configured,
     load_alert_rules,
+    load_monitored_sensors,
     send_alert_email,
     write_alerts_to_sheet,
     _build_body,
@@ -146,6 +149,48 @@ class TestCheckAlerts:
         assert c.addr == "1a"
         assert c.sensor_number == "1"
         assert c.alert_type == "sensor_fault"
+
+
+class TestCheckMissingData:
+    monitored = [MonitoredSensor("fac", "1", 24, "データ受信停止")]
+    now = pd.Timestamp("2026-06-16T09:30:00+09:00").to_pydatetime()
+
+    def test_detects_sensor_silent_beyond_limit(self):
+        rows = [["2026-06-15 09:00:00+09:00", "fac", "1"]]
+
+        result = check_missing_data(rows, self.monitored, now=self.now)
+
+        assert len(result.data_missing) == 1
+        assert "24.5 時間" in result.data_missing[0].details
+
+    def test_does_not_alert_at_limit(self):
+        rows = [["2026-06-15 09:30:00+09:00", "fac", "1"]]
+
+        result = check_missing_data(rows, self.monitored, now=self.now)
+
+        assert not result.has_alerts
+
+    def test_latest_reading_rearms_after_previous_outage(self):
+        rows = [["2026-06-15 09:00:00+09:00", "fac", "1"]]
+        old_alert = [["2026-06-14 09:00:00+09:00", "", "data_missing", "fac", "1"]]
+
+        result = check_missing_data(rows, self.monitored, old_alert, now=self.now)
+
+        assert len(result.data_missing) == 1
+
+    def test_suppresses_duplicate_for_same_last_reading(self):
+        rows = [["2026-06-15 09:00:00+09:00", "fac", "1"]]
+        existing = [["2026-06-15 09:00:00+09:00", "", "data_missing", "fac", "1"]]
+
+        result = check_missing_data(rows, self.monitored, existing, now=self.now)
+
+        assert not result.has_alerts
+
+    def test_alerts_when_sensor_has_never_reported(self):
+        result = check_missing_data([], self.monitored, now=self.now)
+
+        assert len(result.data_missing) == 1
+        assert result.data_missing[0].timestamp == "未受信"
 
 
 class TestBuildEmail:
@@ -311,6 +356,29 @@ class TestLoadAlertRules:
         rules = load_alert_rules(_BadOpSheets())
         # Falls back to defaults since no valid rules
         assert rules == DEFAULT_RULES
+
+
+class TestLoadMonitoredSensors:
+    def test_missing_sheet_disables_monitoring(self):
+        class _FailingSheets:
+            def get_values(self, range_):
+                raise Exception("Sheet not found")
+
+        assert load_monitored_sensors(_FailingSheets()) == []
+
+    def test_loads_enabled_valid_sensors(self):
+        class _ConfiguredSheets:
+            def get_values(self, range_):
+                return [
+                    ["enabled", "addr", "number", "max_silence_hours", "message"],
+                    ["TRUE", "fac", "1", "24", "通信確認要"],
+                    ["FALSE", "fac", "2", "24", "停止中"],
+                    ["TRUE", "fac", "3", "invalid", "不正"],
+                ]
+
+        sensors = load_monitored_sensors(_ConfiguredSheets())
+
+        assert sensors == [MonitoredSensor("fac", "1", 24.0, "通信確認要")]
 
 
 class TestCustomRules:

@@ -32,7 +32,7 @@ import smtplib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from email.mime.text import MIMEText
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Sequence
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -45,6 +45,7 @@ JST = timezone(timedelta(hours=9))
 # --- Alert rules ---
 
 ALERT_RULES_SHEET = "alert_rules"
+MONITORED_SENSORS_SHEET = "monitored_sensors"
 
 OPERATORS: dict[str, object] = {
     "==": op.eq,
@@ -65,6 +66,16 @@ class AlertRule:
     value: float      # threshold value
     alert_type: str   # e.g. "sensor_fault", "low_battery"
     message: str      # human-readable description
+
+
+@dataclass(frozen=True)
+class MonitoredSensor:
+    """A sensor expected to report within a configured interval."""
+
+    addr: str
+    sensor_number: str
+    max_silence_hours: float
+    message: str
 
 
 # Built-in defaults (used when alert_rules sheet is missing or empty)
@@ -134,6 +145,42 @@ def load_alert_rules(sheets: "SheetsClient") -> list[AlertRule]:
     return rules
 
 
+def load_monitored_sensors(sheets: "SheetsClient") -> list[MonitoredSensor]:
+    """Load opt-in missing-data monitoring configuration."""
+    try:
+        values = sheets.get_values(f"{MONITORED_SENSORS_SHEET}!A1:E")
+    except Exception:
+        log.info("monitored_sensors sheet not found; missing-data monitoring disabled")
+        return []
+
+    if len(values) < 2:
+        return []
+
+    header = [str(value).strip().lower() for value in values[0]]
+    sensors: list[MonitoredSensor] = []
+    for row in values[1:]:
+        row_dict = dict(zip(header, row))
+        if str(row_dict.get("enabled", "")).strip().upper() != "TRUE":
+            continue
+        addr = str(row_dict.get("addr", "")).strip()
+        sensor_number = str(row_dict.get("number", "")).strip()
+        try:
+            max_silence_hours = float(row_dict.get("max_silence_hours", ""))
+        except (TypeError, ValueError):
+            log.warning("Skipping monitored sensor with invalid max_silence_hours: %r", row)
+            continue
+        if not addr or not sensor_number or max_silence_hours <= 0:
+            log.warning("Skipping invalid monitored sensor: %r", row)
+            continue
+        sensors.append(MonitoredSensor(
+            addr=addr,
+            sensor_number=sensor_number,
+            max_silence_hours=max_silence_hours,
+            message=str(row_dict.get("message", "")).strip() or "データ受信停止",
+        ))
+    return sensors
+
+
 @dataclass
 class AlertCondition:
     """A single alert occurrence."""
@@ -162,6 +209,10 @@ class AlertResult:
     @property
     def low_battery(self) -> list[AlertCondition]:
         return [c for c in self.conditions if c.alert_type == "low_battery"]
+
+    @property
+    def data_missing(self) -> list[AlertCondition]:
+        return [c for c in self.conditions if c.alert_type == "data_missing"]
 
 
 def check_alerts(published: "pd.DataFrame", rules: list[AlertRule] | None = None) -> AlertResult:
@@ -206,6 +257,69 @@ def check_alerts(published: "pd.DataFrame", rules: list[AlertRule] | None = None
                     details=f"{rule.field}={cell_value} ({rule.message})",
                 ))
 
+    return result
+
+
+def check_missing_data(
+    sensor_rows: Sequence[Sequence[Any]],
+    monitored_sensors: list[MonitoredSensor],
+    existing_alert_rows: Sequence[Sequence[Any]] | None = None,
+    now: datetime | None = None,
+) -> AlertResult:
+    """Detect monitored sensors whose latest reading is too old.
+
+    ``sensor_rows`` uses the sensor sheet's first three columns:
+    date, addr, number. Existing alerts suppress repeats for the same last-seen
+    timestamp; a later reading automatically rearms the alert.
+    """
+    result = AlertResult()
+    if not monitored_sensors:
+        return result
+
+    checked_at = now or datetime.now(JST)
+    if checked_at.tzinfo is None:
+        checked_at = checked_at.replace(tzinfo=JST)
+
+    latest: dict[tuple[str, str], tuple[datetime, str]] = {}
+    for row in sensor_rows:
+        if len(row) < 3:
+            continue
+        timestamp_text = str(row[0]).strip()
+        try:
+            timestamp = datetime.fromisoformat(timestamp_text.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=JST)
+        key = (str(row[1]).strip(), str(row[2]).strip())
+        if key not in latest or timestamp > latest[key][0]:
+            latest[key] = (timestamp, timestamp_text)
+
+    already_alerted = {
+        (str(row[0]).strip(), str(row[3]).strip(), str(row[4]).strip())
+        for row in (existing_alert_rows or [])
+        if len(row) >= 5 and str(row[2]).strip() == "data_missing"
+    }
+
+    for sensor in monitored_sensors:
+        key = (sensor.addr, sensor.sensor_number)
+        last_seen = latest.get(key)
+        timestamp_text = last_seen[1] if last_seen else "未受信"
+        if (timestamp_text, *key) in already_alerted:
+            continue
+        silence_hours = (
+            (checked_at - last_seen[0].astimezone(checked_at.tzinfo)).total_seconds() / 3600
+            if last_seen else float("inf")
+        )
+        if silence_hours > sensor.max_silence_hours:
+            elapsed = "一度も受信していません" if last_seen is None else f"最終受信から {silence_hours:.1f} 時間"
+            result.conditions.append(AlertCondition(
+                alert_type="data_missing",
+                timestamp=timestamp_text,
+                addr=sensor.addr,
+                sensor_number=sensor.sensor_number,
+                details=f"{elapsed}（許容 {sensor.max_silence_hours:g} 時間、{sensor.message}）",
+            ))
     return result
 
 
@@ -305,6 +419,8 @@ def _build_subject(result: AlertResult) -> str:
         parts.append(f"センサ異常 x{len(result.sensor_faults)}")
     if result.low_battery:
         parts.append(f"電池残量低下 x{len(result.low_battery)}")
+    if result.data_missing:
+        parts.append(f"データ受信停止 x{len(result.data_missing)}")
     return f"[土壌センサ警報] {', '.join(parts)}"
 
 
@@ -332,6 +448,18 @@ def _build_body(result: AlertResult) -> str:
         for c in result.low_battery:
             lines.append(
                 f"  日時: {c.timestamp}  "
+                f"アドレス: {c.addr}  センサ番号: {c.sensor_number}"
+            )
+            lines.append(f"  詳細: {c.details}")
+            lines.append("")
+
+    if result.data_missing:
+        lines.append("=" * 50)
+        lines.append("■ データ受信停止")
+        lines.append("=" * 50)
+        for c in result.data_missing:
+            lines.append(
+                f"  最終受信: {c.timestamp}  "
                 f"アドレス: {c.addr}  センサ番号: {c.sensor_number}"
             )
             lines.append(f"  詳細: {c.details}")

@@ -24,12 +24,20 @@ import logging
 import os
 import re
 from datetime import datetime, date, timezone, timedelta
-from typing import Callable
+from typing import Any, Callable
 
 import pandas as pd
 import urllib.request
 
-from .alerts import check_alerts, is_smtp_configured, load_alert_rules, send_alert_email, write_alerts_to_sheet
+from .alerts import (
+    check_alerts,
+    check_missing_data,
+    is_smtp_configured,
+    load_alert_rules,
+    load_monitored_sensors,
+    send_alert_email,
+    write_alerts_to_sheet,
+)
 from .sensor_parser import IngestionConfig, concat_csvs, select_nine_am, to_published
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -292,15 +300,32 @@ def main() -> int:
 
     published = to_published(df, cfg, weather_df=weather_df)
 
-    # Check for alert conditions (sensor faults, low battery)
+    # Check row-level alert conditions (sensor faults, low battery).
     alert_rules = load_alert_rules(sheets)
     alert_result = check_alerts(published, rules=alert_rules)
+
+    # Missing rows need a separate check against each configured sensor's
+    # latest reading. sensor_9am keeps this history compact; current FTP rows
+    # are included so a healthy sensor is not reported before today's append.
+    existing_nine = sheets.get_values("sensor_9am!A2:C")
+    monitored_sensors = load_monitored_sensors(sheets)
+    if monitored_sensors:
+        current_sensor_rows = published[["date", "addr", "number"]].values.tolist()
+        existing_alerts: list[list[Any]] = sheets.get_values("alerts!A2:G")
+        missing_result = check_missing_data(
+            existing_nine + current_sensor_rows,
+            monitored_sensors,
+            existing_alerts,
+        )
+        alert_result.conditions.extend(missing_result.conditions)
+
     if alert_result.has_alerts:
         log.warning(
-            "Detected %d alert condition(s): %d sensor fault(s), %d low battery",
+            "Detected %d alert condition(s): %d sensor fault(s), %d low battery, %d data missing",
             len(alert_result.conditions),
             len(alert_result.sensor_faults),
             len(alert_result.low_battery),
+            len(alert_result.data_missing),
         )
         # Primary: write to "alerts" sheet (GAS sends email)
         write_alerts_to_sheet(alert_result, sheets)
@@ -334,7 +359,6 @@ def main() -> int:
         sheets.extend_filter("sensor_raw")
 
     nine = select_nine_am(published)
-    existing_nine = sheets.get_values("sensor_9am!A2:C")
     nine = _filter_rows_not_existing(nine, existing_nine)
     n2 = sheets.append_rows("sensor_9am", nine.values.tolist())
     log.info("Appended %d rows to sensor_9am", n2)
