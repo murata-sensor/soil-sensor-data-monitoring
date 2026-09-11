@@ -263,10 +263,10 @@ def check_alerts(published: "pd.DataFrame", rules: list[AlertRule] | None = None
 def check_missing_data(
     sensor_rows: Sequence[Sequence[Any]],
     monitored_sensors: list[MonitoredSensor],
+    observation_end: datetime,
     existing_alert_rows: Sequence[Sequence[Any]] | None = None,
-    now: datetime | None = None,
 ) -> AlertResult:
-    """Detect monitored sensors whose latest reading is too old.
+    """Detect monitored sensors silent before a completed reporting boundary.
 
     ``sensor_rows`` uses the sensor sheet's first three columns:
     date, addr, number. Existing alerts suppress repeats for the same last-seen
@@ -276,10 +276,11 @@ def check_missing_data(
     if not monitored_sensors:
         return result
 
-    checked_at = now or datetime.now(JST)
-    if checked_at.tzinfo is None:
-        checked_at = checked_at.replace(tzinfo=JST)
+    if observation_end.tzinfo is None:
+        observation_end = observation_end.replace(tzinfo=JST)
+    observation_end = observation_end.astimezone(JST)
 
+    monitored_keys = {(sensor.addr, sensor.sensor_number) for sensor in monitored_sensors}
     latest: dict[tuple[str, str], tuple[datetime, str]] = {}
     for row in sensor_rows:
         if len(row) < 3:
@@ -291,7 +292,12 @@ def check_missing_data(
             continue
         if timestamp.tzinfo is None:
             timestamp = timestamp.replace(tzinfo=JST)
+        timestamp = timestamp.astimezone(JST)
         key = (str(row[1]).strip(), str(row[2]).strip())
+        if key not in monitored_keys:
+            continue
+        if timestamp > observation_end:
+            continue
         if key not in latest or timestamp > latest[key][0]:
             latest[key] = (timestamp, timestamp_text)
 
@@ -308,11 +314,15 @@ def check_missing_data(
         if (timestamp_text, *key) in already_alerted:
             continue
         silence_hours = (
-            (checked_at - last_seen[0].astimezone(checked_at.tzinfo)).total_seconds() / 3600
+            (observation_end - last_seen[0]).total_seconds() / 3600
             if last_seen else float("inf")
         )
         if silence_hours > sensor.max_silence_hours:
-            elapsed = "一度も受信していません" if last_seen is None else f"最終受信から {silence_hours:.1f} 時間"
+            elapsed = (
+                "一度も受信していません"
+                if last_seen is None
+                else f"同一トランスミッタで {silence_hours:.1f} 時間受信なし"
+            )
             result.conditions.append(AlertCondition(
                 alert_type="data_missing",
                 timestamp=timestamp_text,

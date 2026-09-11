@@ -64,6 +64,15 @@ def _date_from_filename(name: str) -> date | None:
         return None
 
 
+def _completed_ftp_period_end(files: list[tuple[str, bytes]]) -> datetime | None:
+    """Return the 09:00 JST boundary covered by the newest daily FTP file."""
+    file_dates = [file_date for name, _ in files if (file_date := _date_from_filename(name))]
+    if not file_dates:
+        return None
+    period_date = max(file_dates) + timedelta(days=1)
+    return datetime(period_date.year, period_date.month, period_date.day, 9, tzinfo=JST)
+
+
 def _filter_rows_newer_than_last(published: pd.DataFrame, last: str | None) -> pd.DataFrame:
     """Return only rows whose `date` is newer than `last`.
 
@@ -309,12 +318,14 @@ def main() -> int:
     # are included so a healthy sensor is not reported before today's append.
     existing_nine = sheets.get_values("sensor_9am!A2:C")
     monitored_sensors = load_monitored_sensors(sheets)
-    if monitored_sensors:
+    observation_end = _completed_ftp_period_end(files)
+    if monitored_sensors and observation_end is not None:
         current_sensor_rows = published[["date", "addr", "number"]].values.tolist()
         existing_alerts: list[list[Any]] = sheets.get_values("alerts!A2:G")
         missing_result = check_missing_data(
             existing_nine + current_sensor_rows,
             monitored_sensors,
+            observation_end,
             existing_alerts,
         )
         alert_result.conditions.extend(missing_result.conditions)

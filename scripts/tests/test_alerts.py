@@ -152,45 +152,85 @@ class TestCheckAlerts:
 
 
 class TestCheckMissingData:
-    monitored = [MonitoredSensor("fac", "1", 24, "データ受信停止")]
-    now = pd.Timestamp("2026-06-16T09:30:00+09:00").to_pydatetime()
+    monitored = [
+        MonitoredSensor("fac", "1", 3, "データ受信停止"),
+        MonitoredSensor("fb8", "1", 3, "データ受信停止"),
+    ]
+    observation_end = pd.Timestamp("2026-06-15T12:30:00+09:00").to_pydatetime()
 
-    def test_detects_sensor_silent_beyond_limit(self):
-        rows = [["2026-06-15 09:00:00+09:00", "fac", "1"]]
+    def test_detects_transmitter_silent_before_period_end(self):
+        rows = [
+            ["2026-06-15 09:00:00+09:00", "fac", "1"],
+            ["2026-06-15 12:30:00+09:00", "fb8", "1"],
+        ]
 
-        result = check_missing_data(rows, self.monitored, now=self.now)
+        result = check_missing_data(rows, self.monitored, self.observation_end)
 
         assert len(result.data_missing) == 1
-        assert "24.5 時間" in result.data_missing[0].details
+        assert "同一トランスミッタで 3.5 時間受信なし" in result.data_missing[0].details
 
-    def test_does_not_alert_at_limit(self):
-        rows = [["2026-06-15 09:30:00+09:00", "fac", "1"]]
+    def test_does_not_alert_when_all_sensors_are_current(self):
+        rows = [
+            ["2026-06-15 09:30:00+09:00", "fac", "1"],
+            ["2026-06-15 12:00:00+09:00", "fb8", "1"],
+        ]
 
-        result = check_missing_data(rows, self.monitored, now=self.now)
+        result = check_missing_data(rows, self.monitored, self.observation_end)
 
         assert not result.has_alerts
 
     def test_latest_reading_rearms_after_previous_outage(self):
-        rows = [["2026-06-15 09:00:00+09:00", "fac", "1"]]
+        rows = [
+            ["2026-06-15 09:00:00+09:00", "fac", "1"],
+            ["2026-06-15 12:30:00+09:00", "fb8", "1"],
+        ]
         old_alert = [["2026-06-14 09:00:00+09:00", "", "data_missing", "fac", "1"]]
 
-        result = check_missing_data(rows, self.monitored, old_alert, now=self.now)
+        result = check_missing_data(rows, self.monitored, self.observation_end, old_alert)
 
         assert len(result.data_missing) == 1
 
     def test_suppresses_duplicate_for_same_last_reading(self):
-        rows = [["2026-06-15 09:00:00+09:00", "fac", "1"]]
+        rows = [
+            ["2026-06-15 09:00:00+09:00", "fac", "1"],
+            ["2026-06-15 12:30:00+09:00", "fb8", "1"],
+        ]
         existing = [["2026-06-15 09:00:00+09:00", "", "data_missing", "fac", "1"]]
 
-        result = check_missing_data(rows, self.monitored, existing, now=self.now)
+        result = check_missing_data(rows, self.monitored, self.observation_end, existing)
 
         assert not result.has_alerts
 
     def test_alerts_when_sensor_has_never_reported(self):
-        result = check_missing_data([], self.monitored, now=self.now)
+        rows = [["2026-06-15 12:30:00+09:00", "fb8", "1"]]
+
+        result = check_missing_data(rows, self.monitored, self.observation_end)
 
         assert len(result.data_missing) == 1
         assert result.data_missing[0].timestamp == "未受信"
+
+    def test_ignores_newer_data_from_unmonitored_sensor(self):
+        rows = [
+            ["2026-06-15 12:00:00+09:00", "fac", "1"],
+            ["2026-06-15 12:00:00+09:00", "fb8", "1"],
+            ["2026-06-15 15:00:00+09:00", "unmonitored", "1"],
+        ]
+
+        result = check_missing_data(rows, self.monitored, self.observation_end)
+
+        assert not result.has_alerts
+
+    def test_ignores_readings_after_completed_period_end(self):
+        rows = [
+            ["2026-06-15 09:00:00+09:00", "fac", "1"],
+            ["2026-06-15 13:00:00+09:00", "fac", "1"],
+            ["2026-06-15 12:30:00+09:00", "fb8", "1"],
+        ]
+
+        result = check_missing_data(rows, self.monitored, self.observation_end)
+
+        assert len(result.data_missing) == 1
+        assert result.data_missing[0].timestamp == "2026-06-15 09:00:00+09:00"
 
 
 class TestBuildEmail:
