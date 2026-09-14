@@ -69,7 +69,7 @@ def _completed_ftp_period_end(files: list[tuple[str, bytes]]) -> datetime | None
     file_dates = [file_date for name, _ in files if (file_date := _date_from_filename(name))]
     if not file_dates:
         return None
-    period_date = max(file_dates) + timedelta(days=1)
+    period_date = max(file_dates)
     return datetime(period_date.year, period_date.month, period_date.day, 9, tzinfo=JST)
 
 

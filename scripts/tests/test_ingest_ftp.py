@@ -20,7 +20,7 @@ def test_completed_ftp_period_end_uses_newest_file_date():
 
     result = _completed_ftp_period_end(files)
 
-    assert result == pd.Timestamp("2026-06-16T09:00:00+09:00").to_pydatetime()
+    assert result == pd.Timestamp("2026-06-15T09:00:00+09:00").to_pydatetime()
 
 
 def test_filter_rows_newer_than_last_handles_empty_published_with_tz_aware_last():
