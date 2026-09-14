@@ -25,6 +25,7 @@ import { BatteryGauge } from "./BatteryGauge";
 import { parseTs, type PanelSettings, type DeviceColorMap } from "../settings";
 
 const SINGLE_SERIES_METRICS = new Set(["battery_v", "air_temp_c", "precip_1h_mm", "sunshine_1h_h"]);
+const MAX_CONNECTED_GAP_MS = 3 * 60 * 60 * 1000;
 
 function getEventLabelYAdjust(): number {
   // Scriptable yAdjust anchored to chart height so label stays near top
@@ -710,6 +711,7 @@ function buildChartDatasets(
     label: g.label,
     borderColor: g.color,
     backgroundColor: g.color + "20",
-    data: g.data,
+    data: g.data.sort((a, b) => a.x - b.x),
+    spanGaps: MAX_CONNECTED_GAP_MS,
   }));
 }

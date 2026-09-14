@@ -55,6 +55,7 @@ const LEGEND_ONLY_IF_MULTIPLE = new Set([
 const SHARED_METRICS = new Set([
   "air_temp_c", "precip_1h_mm", "sunshine_1h_h",
 ]);
+const MAX_CONNECTED_GAP_MS = 3 * 60 * 60 * 1000;
 
 function getEventLabelYAdjust(): number {
   // Scriptable yAdjust anchored to chart height so label stays near top
@@ -1086,7 +1087,13 @@ function buildDatasets(
     if (seen.size === 0) return [];
     const data = Array.from(seen.entries()).map(([x, y]) => ({ x, y }));
     data.sort((a, b) => a.x - b.x);
-    return [{ label: panel.title, borderColor: colors[0], backgroundColor: colors[0] + "20", data }];
+    return [{
+      label: panel.title,
+      borderColor: colors[0],
+      backgroundColor: colors[0] + "20",
+      data,
+      spanGaps: MAX_CONNECTED_GAP_MS,
+    }];
   }
 
   const groups = new Map<string, { color: string; label: string; data: { x: number; y: number }[] }>();
@@ -1105,7 +1112,11 @@ function buildDatasets(
     groups.get(key)!.data.push({ x, y: v });
   }
   return Array.from(groups.values()).map((g) => ({
-    label: g.label, borderColor: g.color, backgroundColor: g.color + "20", data: g.data,
+    label: g.label,
+    borderColor: g.color,
+    backgroundColor: g.color + "20",
+    data: g.data.sort((a, b) => a.x - b.x),
+    spanGaps: MAX_CONNECTED_GAP_MS,
   }));
 }
 
@@ -1138,7 +1149,11 @@ function buildMultiMetricDatasets(
     }
   }
   return Array.from(groups.values()).map((g) => ({
-    label: g.label, borderColor: g.color, backgroundColor: g.color + "20", data: g.data,
+    label: g.label,
+    borderColor: g.color,
+    backgroundColor: g.color + "20",
+    data: g.data.sort((a, b) => a.x - b.x),
+    spanGaps: MAX_CONNECTED_GAP_MS,
   }));
 }
 
