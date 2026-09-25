@@ -6,6 +6,7 @@ import {
 } from "chart.js";
 import annotationPlugin from "chartjs-plugin-annotation";
 import "chartjs-adapter-date-fns";
+import { format } from "date-fns";
 import { ResponsiveGridLayout, useContainerWidth, type Layout, type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import {
@@ -735,7 +736,13 @@ export default function Dashboard() {
                 </div>
               )}
               <button
-                onClick={() => selected && downloadCsv(`${selected.sourceId}.csv`, filteredRows)}
+                onClick={() => {
+                  if (!selected) return;
+                  const name = selected.displayName.trim().replace(/[\\/:*?"<>|]/g, "_") || selected.sourceId;
+                  const sheet = selected.schemaType === "remote-ftp"
+                    ? `_${ftpSheetName.trim().replace(/[\\/:*?"<>|]/g, "_")}` : "";
+                  downloadCsv(`${name}${sheet}_${format(new Date(), "yyyyMMdd_HHmm")}.csv`, filteredRows);
+                }}
                 disabled={!filteredRows.length}
                 className="px-2 sm:px-3 py-1 rounded bg-emerald-600 text-white disabled:opacity-50 text-xs sm:text-sm">
                 CSV
