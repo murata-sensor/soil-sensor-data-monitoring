@@ -9,6 +9,8 @@
 
 import { getAccessToken } from "../auth/google";
 import { toNormalized, type NormalizedRow } from "../adapters";
+import type { DeviceReplacement } from "../deviceReplacements";
+import { parseTs } from "../settings";
 import type {
   AclRow, EventRow, SourceRow, Theme, UserRow,
 } from "../types";
@@ -192,14 +194,27 @@ function parseAcl(raw: Record<string, string>[]): AclRow[] {
   })).filter((a) => a.email && a.sourceId);
 }
 
-function parseEvents(raw: Record<string, string>[]): EventRow[] {
-  return raw.map((r) => ({
+export function parseSourceEvents(values: string[][]): { events: EventRow[]; replacements: DeviceReplacement[] } {
+  const raw = toObjects<Record<string, string>>(values);
+  const events = raw.map((r) => ({
     date: r.date,
     label: r.label,
     color: r.color || undefined,
     deviceId: r.deviceId ? r.deviceId.trim() : undefined,
     enabled: r.enabled ? r.enabled.trim().toUpperCase() !== "FALSE" : true,
   })).filter((e) => e.date && e.label && e.enabled !== false);
+  const replacements = raw.filter((r) => {
+    const oldId = r.oldDeviceId?.trim();
+    const newId = r.newDeviceId?.trim();
+    return oldId && newId && oldId !== newId
+      && /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2})$/.test(r.date?.trim() ?? "")
+      && Number.isFinite(parseTs(r.date));
+  }).map((r) => ({
+    oldDeviceId: r.oldDeviceId.trim(),
+    newDeviceId: r.newDeviceId.trim(),
+    effectiveFrom: r.date.trim(),
+  }));
+  return { events, replacements };
 }
 
 /**
@@ -209,15 +224,15 @@ function parseEvents(raw: Record<string, string>[]): EventRow[] {
 export async function loadSourceEvents(
   source: SourceRow,
   idToken?: string,
-): Promise<EventRow[]> {
+): Promise<{ events: EventRow[]; replacements: DeviceReplacement[] }> {
   try {
     const values = source.accessMode === "proxy"
       ? await readProxy(source, idToken || "", "events")
       : await sheetsGet(source.spreadsheetId, "events!A1:Z");
-    return parseEvents(toObjects<Record<string, string>>(values));
+    return parseSourceEvents(values);
   } catch {
     // events tab may not exist — that's fine
-    return [];
+    return { events: [], replacements: [] };
   }
 }
 
@@ -235,7 +250,7 @@ function parseTheme(rows: string[][]): Theme | null {
 
 export async function loadLayouts(): Promise<LayoutConfig[]> {
   try {
-    const rows = await readRegistry("layouts!A1:B");
+    const rows = await readRegistry("layouts!A1:C");
     return parseLayouts(rows);
   } catch {
     // layouts sheet may not exist
@@ -243,15 +258,17 @@ export async function loadLayouts(): Promise<LayoutConfig[]> {
   }
 }
 
-function parseLayouts(rows: string[][]): LayoutConfig[] {
+export function parseLayouts(rows: string[][]): LayoutConfig[] {
   if (rows.length < 2) return [];
   const configs: LayoutConfig[] = [];
   for (let i = 1; i < rows.length; i++) {
-    const [, json] = rows[i];
+    const [, json, year] = rows[i];
     if (!json) continue;
     try {
       const cfg = JSON.parse(json) as LayoutConfig;
-      if (cfg.sourceId) configs.push(cfg);
+      if (cfg.sourceId && (!year || /^\d{4}$/.test(year.trim()))) {
+        configs.push({ ...cfg, year: year?.trim() ? Number(year.trim()) : undefined });
+      }
     } catch { /* skip malformed */ }
   }
   return configs;

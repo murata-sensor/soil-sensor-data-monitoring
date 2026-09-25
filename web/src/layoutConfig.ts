@@ -66,7 +66,7 @@ export interface GaugePanelConfig {
   deviceFilter?: string[];
   /** Which metric to show on gauge. Default: "battery_v". */
   metric?: Metric;
-  /** Gauge ranges: [red_start, yellow_start, green_start, max] */
+  /** Optional override of LayoutConfig.batteryRanges. */
   ranges?: [number, number, number, number];
   position: PanelPosition;
 }
@@ -111,6 +111,8 @@ export type LayoutPanel =
 export interface LayoutConfig {
   /** Source ID this layout applies to. */
   sourceId: string;
+  /** Optional year from the Registry layouts sheet. */
+  year?: number;
   /** Display title shown at top of dashboard. */
   title?: string;
   /** Number of grid columns (default: 12). */
@@ -123,6 +125,8 @@ export interface LayoutConfig {
   surface?: string;
   /** Text color. */
   textColor?: string;
+  /** Shared gauge thresholds: [min, yellowStart, greenStart, max]. */
+  batteryRanges?: [number, number, number, number];
   /**
    * Device address list. Panels reference devices by index via `deviceRef`
    * so each address appears only once.
@@ -136,6 +140,20 @@ export interface LayoutConfig {
   deviceLabels?: string[];
   /** Panels in this layout. */
   panels: LayoutPanel[];
+}
+
+export function resolveGaugeRanges(
+  panel: GaugePanelConfig, layout: Pick<LayoutConfig, "batteryRanges">,
+): [number, number, number, number] {
+  return panel.ranges ?? layout.batteryRanges ?? [2.0, 2.5, 3.0, 3.6];
+}
+
+export function selectLayoutForYear(
+  layouts: LayoutConfig[], sourceId: string | null, year: number | null,
+): LayoutConfig | undefined {
+  const forSource = layouts.filter((layout) => layout.sourceId === sourceId);
+  return forSource.find((layout) => year !== null && layout.year === year)
+    ?? forSource.find((layout) => layout.year === undefined);
 }
 
 /**
@@ -218,7 +236,6 @@ export function generateDeviceColumnLayout(
       title: "Battery voltage[V]",
       deviceRef: col,
       metric: "battery_v",
-      ranges: batteryRanges,
       position: { x, y, w: colW, h: 2 },
     });
     y += 2;
@@ -268,6 +285,7 @@ export function generateDeviceColumnLayout(
     bg: "#1a1a1a",
     surface: "#2a2a2a",
     textColor: "#ffffff",
+    batteryRanges,
     devices,
     deviceLabels: devices,
     panels,

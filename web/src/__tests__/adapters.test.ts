@@ -3,7 +3,9 @@ import { toNormalized } from "../adapters";
 import { HEADER_MAP as M5_HEADERS } from "../adapters/m5stack";
 import { HEADER_MAP as MX_HEADERS } from "../adapters/mechatrax";
 import { HEADER_MAP as PC_HEADERS } from "../adapters/pcSerial";
-import { resolveAllowedSources } from "../api/sheets";
+import { parseSourceEvents, resolveAllowedSources } from "../api/sheets";
+import { applyDeviceReplacements, applyReplacementsToLayout } from "../deviceReplacements";
+import type { LayoutConfig } from "../layoutConfig";
 import type { AclRow, SourceRow, UserRow } from "../types";
 
 const M5_HEADER = [
@@ -149,6 +151,83 @@ describe("remote-ftp adapter", () => {  it("reads published columns", () => {
     expect(rows[0].vwc_pct).toBeCloseTo(55.4);
     expect(rows[0].temperature_c).toBeCloseTo(22.3);
     expect(rows[0].air_temp_c).toBeCloseTo(25.1);
+  });
+});
+
+describe("device replacements", () => {
+  it("joins readings at the replacement time without changing sensor numbers or raw rows", () => {
+    const rows = toNormalized("remote-ftp", [
+      ["date", "addr", "number", "vwc"],
+      ["2026-09-24 08:59:00+09:00", "fac", "1", "52"],
+      ["2026-09-24 09:00:00+09:00", "1c98", "1", "53"],
+      ["2026-09-24 08:59:00+09:00", "1c98", "2", "54"],
+      ["2026-09-24 09:00:00+09:00", "other", "1", "55"],
+    ]);
+    const displayRows = applyDeviceReplacements(rows, [
+      { oldDeviceId: "fac", newDeviceId: "1c98", effectiveFrom: "2026-09-24T09:00:00+09:00" },
+    ]);
+    expect(displayRows.map((row) => row.deviceId)).toEqual(["fac", "fac", "1c98", "other"]);
+    expect(displayRows.map((row) => row.sensorNumber)).toEqual(["1", "1", "2", "1"]);
+    expect(rows[1].deviceId).toBe("1c98");
+  });
+
+  it("reads replacement columns even when the chart event is hidden", () => {
+    const result = parseSourceEvents([
+      ["date", "label", "color", "deviceId", "enabled", "oldDeviceId", "newDeviceId"],
+      ["2026-09-24 09:00:00+09:00", "送信機交換", "", "fac", "FALSE", "fac", "1c98"],
+      ["2026-09-25 09:00:00+09:00", "水やり", "#ef4444", "*", "TRUE"],
+      ["2026-09-26 09:00:00+09:00", "無効", "", "", "FALSE", "", "other"],
+    ]);
+    expect(result.replacements).toEqual([{
+      oldDeviceId: "fac", newDeviceId: "1c98", effectiveFrom: "2026-09-24 09:00:00+09:00",
+    }]);
+    expect(result.events.map((event) => event.label)).toEqual(["水やり"]);
+  });
+
+  it("keeps a series under its original ID across multiple replacements", () => {
+    const rows = [
+      { ts: "2026-09-24T09:00:00+09:00", deviceId: "1c98" },
+      { ts: "2026-10-01T09:00:00+09:00", deviceId: "next" },
+    ];
+    expect(applyDeviceReplacements(rows, [
+      { oldDeviceId: "fac", newDeviceId: "1c98", effectiveFrom: "2026-09-24T09:00:00+09:00" },
+      { oldDeviceId: "1c98", newDeviceId: "next", effectiveFrom: "2026-10-01T09:00:00+09:00" },
+    ]).map((row) => row.deviceId)).toEqual(["fac", "fac"]);
+  });
+
+  it("resolves the new address in annual layout filters without changing labels", () => {
+    const layout: LayoutConfig = {
+      sourceId: "tohoku-ftp", year: 2026, devices: ["1c98"], deviceLabels: ["2026 transmitter 1c98"],
+      panels: [
+        { type: "chart", id: "vwc", title: "VWC", metric: "vwc_pct", deviceRef: 0,
+          position: { x: 0, y: 0, w: 6, h: 3 } },
+        { type: "gauge", id: "battery", title: "Battery", deviceFilter: ["1c98"],
+          position: { x: 0, y: 3, w: 6, h: 2 } },
+      ],
+    };
+    const mapped = applyReplacementsToLayout(layout, [
+      { oldDeviceId: "fac", newDeviceId: "1c98", effectiveFrom: "2026-09-24 09:00:00+09:00" },
+    ], 2026, "Asia/Tokyo");
+    expect(mapped.devices).toEqual(["fac"]);
+    expect(mapped.deviceLabels).toEqual(["2026 transmitter 1c98"]);
+    expect(mapped.panels[1]).toMatchObject({ deviceFilter: ["fac"] });
+    expect(layout.devices).toEqual(["1c98"]);
+  });
+
+  it.each([
+    ["m5stack" as const, [M5_HEADER, M5_ROW], "24026902"],
+    ["mechatrax" as const, [MX_HEADER, MX_ROW], "25037029"],
+  ])("joins %s readings using the source timezone", (schema, values, oldId) => {
+    const before = [...values[1]];
+    const after = [...values[1]];
+    const serialIndex = values[0].indexOf("SerialNumber");
+    before[0] = "2026-09-24 08:59:00";
+    after[0] = "2026-09-24 09:00:00";
+    after[serialIndex] = "replacement";
+    const rows = toNormalized(schema, [values[0], before, after]);
+    expect(applyDeviceReplacements(rows, [
+      { oldDeviceId: oldId, newDeviceId: "replacement", effectiveFrom: "2026-09-24T09:00:00+09:00" },
+    ], "Asia/Tokyo").map((row) => row.deviceId)).toEqual([oldId, oldId]);
   });
 });
 

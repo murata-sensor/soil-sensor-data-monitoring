@@ -137,7 +137,7 @@ viewer ロールのユーザーは **`acl` に行を入れない限り 1 つも�
 
 イベント注釈は **各データソースのスプレッドシート** に `events` シートとして配置します（Registry スプレッドシートではありません）。
 
-ヘッダ: `date,label,color,deviceId,enabled`
+ヘッダ: `date,label,color,deviceId,enabled,oldDeviceId,newDeviceId`（最後の2列は送信機交換用、既存のイベント行は空欄でよい）
 
 | date | label | color | deviceId | enabled |
 | --- | --- | --- | --- | --- |
@@ -155,6 +155,18 @@ viewer ロールのユーザーは **`acl` に行を入れない限り 1 つも�
 | `color` | | 縦線の色（CSS カラー）。省略時は `#ef4444`（赤） |
 | `deviceId` | | 表示対象の制御（下表参照） |
 | `enabled` | | `TRUE`（デフォルト）で表示、`FALSE` で非表示。削除せずに一時的に隠したいときに便利 |
+| `oldDeviceId` | | 交換前の送信機 ID。交換行のみ入力 |
+| `newDeviceId` | | 交換後の送信機 ID。交換行のみ入力 |
+
+### 送信機のみを交換したとき
+
+対象データソースの `events` シートに上記2列を追加し、1回の交換につき1行追加します（FTP、M5Stack、mechatrax 共通）。例: `tohoku-ftp` の `fac` から `1c98` への交換:
+
+| date | label | color | deviceId | enabled | oldDeviceId | newDeviceId |
+| --- | --- | --- | --- | --- | --- | --- |
+| `2026-09-24 09:00:00+09:00` | `送信機交換` | `#ef4444` | `fac` | `FALSE` | `fac` | `1c98` |
+
+`date` は**交換後の送信機で測定を始めた実際の日時**に置き換え、必ず `+09:00` などのタイムゾーンを付けてください。`enabled=FALSE` でも交換は適用され、縦線・ラベルだけ非表示になります。交換前の新IDの記録はそのまま別系列に残ります。交換後は `fac` の系列に引き継がれます。FTP の `number` や元データは変更されません。次の交換時は `oldDeviceId=1c98`, `newDeviceId=次のID` の行を追加します。
 
 ### `deviceId` の指定方法
 
@@ -181,12 +193,16 @@ viewer ロールのユーザーは **`acl` に行を入れない限り 1 つも�
 
 ### 5-1. `layouts` シートの形式
 
-| sourceId | config |
-| --- | --- |
-| `src-remote-a` | （JSON 文字列。下記参照） |
+| sourceId | config | year |
+| --- | --- | --- |
+| `src-remote-a` | （JSON 文字列。下記参照） | `2025` |
+| `src-remote-a` | （翌年の JSON 文字列） | `2026` |
 
 - **A列**: 対象の `sourceId`（`sources` シートと一致させる）
 - **B列**: LayoutConfig の JSON 文字列（1セルに全部入れる）
+- **C列**: 対象年（西暦4桁）。空欄は従来どおり全年度共通のレイアウト。対象年があればそちらを優先
+
+年別レイアウトを登録すると年セレクタが現れます。表示中の期間にデータがある最新年を初期選択し、選択年のデータだけを表示します。過去年を選ぶと表示期間もその年の全期間に切り替わります。年をまたぐ期間でも一度に使うレイアウトは1件です。対象年の行が無いときは共通行を使い、共通行も無ければ自動レイアウトを使います。交換後の年の `devices` や `deviceFilter` には新しいaddrを書けます。表示時に交換履歴に従って同じ系列へ解決されます。
 
 ### 5-2. LayoutConfig のトップレベル
 
@@ -199,6 +215,7 @@ viewer ロールのユーザーは **`acl` に行を入れない限り 1 つも�
   "bg": "#1a1a1a",
   "surface": "#2a2a2a",
   "textColor": "#ffffff",
+  "batteryRanges": [2, 2.5, 3, 3.6],
   "devices": ["6c1", "faa", "1c9f"],
   "deviceLabels": [
     "6c1\nSensor 1: depth 0cm\nSensor 2: depth 5cm",
@@ -212,6 +229,9 @@ viewer ロールのユーザーは **`acl` に行を入れない限り 1 つも�
 - `devices`: デバイスアドレスの配列。パネルの `deviceRef` で **インデックス参照** する
 - `deviceLabels`: デバイスのラベル配列。text パネルの `contentRef` で参照
 - `devices` / `deviceLabels` を使うと、JSON 内でアドレスを何度も書かずにインデックスで参照できる
+- `batteryRanges`: 全バッテリーゲージ共通の `[最小値, 黄色開始, 緑色開始, 最大値]`（V）。上記なら赤 2～2.5 V、黄 2.5～3 V、緑 3～3.6 V。省略時は同じ値が既定値
+- 特定のゲージだけ変えたい場合は、そのパネルの `ranges` が `batteryRanges` より優先される
+- 既存の JSON を共通設定に移す際は、トップレベルに `batteryRanges` を追加し、各ゲージの `ranges` を削除する。残した個別値は共通値より優先される
 
 ### 5-3. パネルタイプ
 
@@ -253,7 +273,7 @@ viewer ロールのユーザーは **`acl` に行を入れない限り 1 つも�
 
 **ケース**: 7台のセンサがあり、デバイスごとにゲージ＋温度＋EC＋VWC を縦に並べたい
 
-1. Registry スプレッドシートの `layouts` タブを開く（無ければ作成: A1=`sourceId`, B1=`config`）
+1. Registry スプレッドシートの `layouts` タブを開く（無ければ作成: A1=`sourceId`, B1=`config`, C1=`year`）
 2. A2 に `src-remote-a`
 3. B2 に JSON を貼り付け（参考: `docs/layout.json` に実例あり）
 4. ダッシュボードをリロード → カスタムレイアウトが適用される

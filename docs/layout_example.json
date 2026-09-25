@@ -6,6 +6,7 @@
   "bg": "#1a1a1a",
   "surface": "#2a2a2a",
   "textColor": "#ffffff",
+  "batteryRanges": [2, 2.5, 3, 3.6],
   "devices": [
     "aaaa",
     "bbbb",
@@ -57,12 +58,6 @@
       "title": "Battery voltage[V]",
       "deviceRef": 0,
       "metric": "battery_v",
-      "ranges": [
-        2,
-        2.5,
-        3,
-        3.6
-      ],
       "position": {
         "x": 0,
         "y": 2,
@@ -218,12 +213,6 @@
       "title": "Battery voltage[V]",
       "deviceRef": 1,
       "metric": "battery_v",
-      "ranges": [
-        2,
-        2.5,
-        3,
-        3.6
-      ],
       "position": {
         "x": 2,
         "y": 2,
@@ -379,12 +368,6 @@
       "title": "Battery voltage[V]",
       "deviceRef": 2,
       "metric": "battery_v",
-      "ranges": [
-        2,
-        2.5,
-        3,
-        3.6
-      ],
       "position": {
         "x": 4,
         "y": 2,
@@ -540,12 +523,6 @@
       "title": "Battery voltage[V]",
       "deviceRef": 3,
       "metric": "battery_v",
-      "ranges": [
-        2,
-        2.5,
-        3,
-        3.6
-      ],
       "position": {
         "x": 6,
         "y": 2,
@@ -701,12 +678,6 @@
       "title": "Battery voltage[V]",
       "deviceRef": 4,
       "metric": "battery_v",
-      "ranges": [
-        2,
-        2.5,
-        3,
-        3.6
-      ],
       "position": {
         "x": 8,
         "y": 2,
@@ -862,12 +833,6 @@
       "title": "Battery voltage[V]",
       "deviceRef": 5,
       "metric": "battery_v",
-      "ranges": [
-        2,
-        2.5,
-        3,
-        3.6
-      ],
       "position": {
         "x": 10,
         "y": 2,
@@ -1023,12 +988,6 @@
       "title": "Battery voltage[V]",
       "deviceRef": 6,
       "metric": "battery_v",
-      "ranges": [
-        2,
-        2.5,
-        3,
-        3.6
-      ],
       "position": {
         "x": 12,
         "y": 2,

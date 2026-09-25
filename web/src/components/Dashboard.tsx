@@ -20,6 +20,7 @@ import {
   type EventRow, type SourceRow, type SubstrateType, type ThemePanel,
 } from "../types";
 import type { NormalizedRow } from "../adapters";
+import { applyDeviceReplacements, applyReplacementsToLayout, type DeviceReplacement } from "../deviceReplacements";
 import { ConsentRequiredError, requestConsentToken, signOut } from "../auth/google";
 import {
   type DateRangeType, type DeviceColorMap, type LayoutPreset,
@@ -27,7 +28,7 @@ import {
   dateRangeToMs, loadSettings, parseTs, saveSettings, withSourceLayout,
 } from "../settings";
 import type { LayoutConfig, TextPanelConfig } from "../layoutConfig";
-import { generateDeviceColumnLayout } from "../layoutConfig";
+import { generateDeviceColumnLayout, selectLayoutForYear } from "../layoutConfig";
 import { CustomLayoutDashboard } from "./CustomLayoutDashboard";
 import type { Metric } from "../types";
 
@@ -98,7 +99,9 @@ export default function Dashboard() {
   const [allowed, setAllowed] = useState<SourceRow[]>([]);
   const [rows, setRows] = useState<NormalizedRow[] | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);
+  const [replacements, setReplacements] = useState<DeviceReplacement[]>([]);
   const [layouts, setLayouts] = useState<LayoutConfig[]>([]);
+  const [yearOverride, setYearOverride] = useState<{ sourceId: string; year: number } | null>(null);
   const [registryLoading, setRegistryLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -194,12 +197,14 @@ export default function Dashboard() {
     if (!user || !selectedSourceId) {
       setRows(null);
       setEvents([]);
+      setReplacements([]);
       return;
     }
     const src = allowed.find((s) => s.sourceId === selectedSourceId);
     if (!src) {
       setRows(null);
       setEvents([]);
+      setReplacements([]);
       return;
     }
     setLoading(true); setError(null);
@@ -210,10 +215,19 @@ export default function Dashboard() {
       }),
       loadSourceEvents(src, user.idToken),
     ])
-      .then(([r, ev]) => { setRows(r.rows); setEvents(ev); })
+      .then(([r, ev]) => {
+        setRows(applyDeviceReplacements(r.rows, ev.replacements, src.tz));
+        setEvents(ev.events.map((event) => event.deviceId && event.deviceId !== "*"
+          ? { ...event, deviceId: applyDeviceReplacements(
+            [{ ts: event.date, deviceId: event.deviceId }], ev.replacements, src.tz,
+          )[0].deviceId }
+          : event));
+        setReplacements(ev.replacements);
+      })
       .catch((e) => {
         setRows([]);
         setEvents([]);
+        setReplacements([]);
         setError(String(e));
       })
       .finally(() => setLoading(false));
@@ -256,7 +270,7 @@ export default function Dashboard() {
   );
 
   // Filter rows by date range
-  const filteredRows = useMemo(() => {
+  const rangeRows = useMemo(() => {
     if (!rows || !settings) return rows ?? [];
     const range = dateRangeToMs(settings.dateRange);
     if (!range) return rows;
@@ -267,10 +281,29 @@ export default function Dashboard() {
     });
   }, [rows, settings]);
 
+  const hasAnnualLayouts = layouts.some((layout) =>
+    layout.sourceId === selectedSourceId && layout.year !== undefined);
+  const yearOptions = useMemo(() => Array.from(new Set([
+    ...layouts.filter((layout) => layout.sourceId === selectedSourceId && layout.year !== undefined)
+      .map((layout) => layout.year!),
+    ...(rows ?? []).map((row) => Number(row.ts?.slice(0, 4)))
+      .filter((year) => Number.isInteger(year) && year >= 1000 && year <= 9999),
+  ])).sort((a, b) => b - a), [layouts, selectedSourceId, rows]);
+  const autoYear = rangeRows.length
+    ? rangeRows.reduce((latest, row) => Math.max(latest, Number(row.ts?.slice(0, 4)) || 0), 0)
+    : Number(settings?.dateRange.type === "custom" && settings.dateRange.start?.slice(0, 4)) || yearOptions[0] || new Date().getFullYear();
+  const activeYear = yearOverride?.sourceId === selectedSourceId ? yearOverride.year : autoYear;
+  const filteredRows = useMemo(() => hasAnnualLayouts
+    ? rangeRows.filter((row) => Number(row.ts?.slice(0, 4)) === activeYear)
+    : rangeRows, [rangeRows, hasAnnualLayouts, activeYear]);
+
   // Check if there's a custom layout for this source
   const customLayout = useMemo(() => {
     // First check for explicitly configured layout
-    const explicit = layouts.find((l) => l.sourceId === selectedSourceId);
+    const configured = selectLayoutForYear(layouts, selectedSourceId, activeYear);
+    const explicit = configured && selected
+      ? applyReplacementsToLayout(configured, replacements, activeYear, selected.tz)
+      : configured;
     if (explicit) {
       // Inject precip/sunshine panels if the layout has air_temp_c but not these
       const hasAirTemp = explicit.panels.some((p) => p.type === "chart" && p.metric === "air_temp_c");
@@ -317,7 +350,7 @@ export default function Dashboard() {
       }
     }
     return null;
-  }, [layouts, selectedSourceId, selected, filteredRows]);
+  }, [layouts, selectedSourceId, selected, filteredRows, activeYear, replacements]);
 
   const settingsPanels = useMemo(() => {
     if (customLayout) {
@@ -617,7 +650,7 @@ export default function Dashboard() {
                 <label className="text-slate-600 shrink-0 text-xs sm:text-sm">シート：</label>
                 <select
                   value={ftpSheetName}
-                  onChange={(e) => updateSettings({ ftpSheetName: e.target.value })}
+                  onChange={(e) => { setYearOverride(null); updateSettings({ ftpSheetName: e.target.value }); }}
                   className="border rounded px-2 py-1 bg-white text-xs sm:text-sm"
                 >
                   {sheetNames.map((name) => (
@@ -658,6 +691,7 @@ export default function Dashboard() {
                 value={settings?.dateRange.type || "last7d"}
                 onChange={(e) => {
                   const type = e.target.value as DateRangeType;
+                  setYearOverride(null);
                   updateSettings({ dateRange: { ...settings!.dateRange, type } });
                 }}
                 className="border rounded px-2 py-1 bg-white text-xs sm:text-sm"
@@ -670,16 +704,35 @@ export default function Dashboard() {
                 <>
                   <input type="date" className="border rounded px-1 py-0.5 text-xs"
                     value={settings.dateRange.start || ""}
-                    onChange={(e) => updateSettings({
-                      dateRange: { ...settings.dateRange, start: e.target.value },
-                    })} />
+                    onChange={(e) => {
+                      setYearOverride(null);
+                      updateSettings({ dateRange: { ...settings.dateRange, start: e.target.value } });
+                    }} />
                   <span>〜</span>
                   <input type="date" className="border rounded px-1 py-0.5 text-xs"
                     value={settings.dateRange.end || ""}
-                    onChange={(e) => updateSettings({
-                      dateRange: { ...settings.dateRange, end: e.target.value },
-                    })} />
+                    onChange={(e) => {
+                      setYearOverride(null);
+                      updateSettings({ dateRange: { ...settings.dateRange, end: e.target.value } });
+                    }} />
                 </>
+              )}
+              {hasAnnualLayouts && yearOptions.length > 0 && (
+                <div className="flex items-center gap-1">
+                  <label htmlFor="layout-year" className="text-slate-600 text-xs sm:text-sm">年：</label>
+                  <select id="layout-year" value={activeYear}
+                    onChange={(e) => {
+                      const year = Number(e.target.value);
+                      setYearOverride({ sourceId: selectedSourceId!, year });
+                      updateSettings({ dateRange: {
+                        type: "custom", start: `${year}-01-01`, end: `${year + 1}-01-01`,
+                      } });
+                    }}
+                    className="border rounded px-2 py-1 bg-white text-xs sm:text-sm"
+                  >
+                    {yearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
+                  </select>
+                </div>
               )}
               <button
                 onClick={() => selected && downloadCsv(`${selected.sourceId}.csv`, filteredRows)}
@@ -761,7 +814,7 @@ export default function Dashboard() {
             )}
             {customLayout ? (
               <CustomLayoutDashboard
-                key={`custom-layout-${selectedSourceId ?? "none"}-${customLayoutResetKey}`}
+                key={`custom-layout-${selectedSourceId ?? "none"}-${activeYear}-${customLayoutResetKey}`}
                 layout={visibleCustomLayout || customLayout}
                 rows={filteredRows}
                 events={mergedEvents}

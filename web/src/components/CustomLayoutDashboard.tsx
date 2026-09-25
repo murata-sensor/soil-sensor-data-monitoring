@@ -20,7 +20,7 @@ import type {
   LayoutPanel,
   TextPanelConfig,
 } from "../layoutConfig";
-import { resolveDeviceFilter } from "../layoutConfig";
+import { resolveDeviceFilter, resolveGaugeRanges } from "../layoutConfig";
 import { BatteryGauge } from "./BatteryGauge";
 import { parseTs, type PanelSettings, type DeviceColorMap } from "../settings";
 
@@ -164,6 +164,7 @@ export function CustomLayoutDashboard({
             <div key={panel.id}>
               <PanelRenderer
                 panel={panel}
+                layout={layout}
                 rows={rows}
                 events={events}
                 surface={surface}
@@ -190,6 +191,7 @@ export function CustomLayoutDashboard({
 
 function PanelRenderer({
   panel,
+  layout,
   rows,
   events,
   surface,
@@ -205,6 +207,7 @@ function PanelRenderer({
   readOnly,
 }: {
   panel: LayoutPanel;
+  layout: LayoutConfig;
   rows: NormalizedRow[];
   events: EventRow[];
   surface: string;
@@ -235,7 +238,7 @@ function PanelRenderer({
     case "image":
       return <ImagePanel panel={panel} surface={surface} />;
     case "gauge":
-      return <GaugePanel panel={panel} rows={rows} surface={surface} textColor={textColor} devices={devices} />;
+      return <GaugePanel panel={panel} layout={layout} rows={rows} surface={surface} textColor={textColor} devices={devices} />;
     case "chart": {
       const chart = (
         <ChartPanel
@@ -416,19 +419,21 @@ function ImagePanel({ panel, surface }: { panel: ImagePanelConfig; surface: stri
 
 function GaugePanel({
   panel,
+  layout,
   rows,
   surface,
   textColor,
   devices,
 }: {
   panel: GaugePanelConfig;
+  layout: LayoutConfig;
   rows: NormalizedRow[];
   surface: string;
   textColor: string;
   devices?: string[];
 }) {
   const metric = panel.metric ?? "battery_v";
-  const ranges = panel.ranges ?? [2.0, 2.5, 3.0, 3.6];
+  const ranges = resolveGaugeRanges(panel, layout);
   const df = resolveDeviceFilter(panel, devices);
 
   // Get the latest value for the filtered device(s)
