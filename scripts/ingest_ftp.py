@@ -308,8 +308,27 @@ def main() -> int:
         log.info("Weather coordinates not provided (FTP_SITE_LATITUDE/FTP_SITE_LONGITUDE)")
 
     published = to_published(df, cfg, weather_df=weather_df)
+    current_sensor_rows = published[["date", "addr", "number"]].values.tolist()
 
-    # Check row-level alert conditions (sensor faults, low battery).
+    # Fast path: append only strictly newer rows.
+    # Backfill path: when INGEST_FILTER_START is older than current last row,
+    # switch to key-based de-duplication so historical gaps can be filled.
+    last_ts = _parse_ts_as_jst(last)
+    if last_ts is not None and cfg.start_after < last_ts:
+        existing = sheets.get_values("sensor_raw!A2:C")
+        before = len(published)
+        published = _filter_rows_not_existing(published, existing)
+        log.info(
+            "Backfill mode enabled (start_after=%s, last=%s): kept %d/%d rows after key de-duplication",
+            cfg.start_after,
+            last_ts,
+            len(published),
+            before,
+        )
+    else:
+        published = _filter_rows_newer_than_last(published, last)
+
+    # Check row-level alert conditions only for newly ingested readings.
     alert_rules = load_alert_rules(sheets)
     alert_result = check_alerts(published, rules=alert_rules)
 
@@ -320,7 +339,6 @@ def main() -> int:
     monitored_sensors = load_monitored_sensors(sheets)
     observation_end = _completed_ftp_period_end(files)
     if monitored_sensors and observation_end is not None:
-        current_sensor_rows = published[["date", "addr", "number"]].values.tolist()
         existing_alerts: list[list[Any]] = sheets.get_values("alerts!A2:G")
         missing_result = check_missing_data(
             existing_nine + current_sensor_rows,
@@ -344,23 +362,6 @@ def main() -> int:
         if is_smtp_configured():
             send_alert_email(alert_result)
 
-    # Fast path: append only strictly newer rows.
-    # Backfill path: when INGEST_FILTER_START is older than current last row,
-    # switch to key-based de-duplication so historical gaps can be filled.
-    last_ts = _parse_ts_as_jst(last)
-    if last_ts is not None and cfg.start_after < last_ts:
-        existing = sheets.get_values("sensor_raw!A2:C")
-        before = len(published)
-        published = _filter_rows_not_existing(published, existing)
-        log.info(
-            "Backfill mode enabled (start_after=%s, last=%s): kept %d/%d rows after key de-duplication",
-            cfg.start_after,
-            last_ts,
-            len(published),
-            before,
-        )
-    else:
-        published = _filter_rows_newer_than_last(published, last)
     n1 = sheets.append_rows(
         "sensor_raw",
         published.values.tolist(),

@@ -1,6 +1,14 @@
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
+from unittest.mock import Mock
+
 import pandas as pd
+import pytest
+
+from scripts import ingest_ftp
+from scripts.alerts import MonitoredSensor
 
 from scripts.ingest_ftp import (
     _clamp_weather_date_range,
@@ -10,6 +18,62 @@ from scripts.ingest_ftp import (
     _parse_ts_as_jst,
     fetch_weather_data,
 )
+
+
+@pytest.mark.parametrize("start_after", [
+    "2026-06-14T09:00:00+09:00",
+    "2026-06-15T09:00:00+09:00",
+])
+@pytest.mark.parametrize("monitor_missing", [False, True])
+def test_main_alerts_only_for_new_readings_on_repeated_ingestion(monkeypatch, start_after, monitor_missing):
+    old_date = "2026-06-15 09:00:00+09:00"
+    new_date = "2026-06-16 08:30:00+09:00"
+    published = pd.DataFrame({
+        "date": [old_date, new_date],
+        "addr": ["fac", "fac"],
+        "number": ["1", "1"],
+        "battery2": [2.0, 2.0],
+    })
+    stored = {
+        "sensor_raw": [published.iloc[0].tolist()],
+        "sensor_9am": [[old_date, "fac", "1"]],
+        "alerts": [],
+    }
+
+    def append_rows(sheet, rows):
+        stored[sheet].extend(rows)
+        return len(rows)
+
+    sheets = Mock()
+    sheets.last_date.side_effect = lambda sheet: stored[sheet][-1][0]
+    sheets.get_values.side_effect = lambda range_: stored[range_.split("!")[0]]
+    sheets.append_rows.side_effect = append_rows
+    monkeypatch.setenv("FTP_SPREADSHEET_ID", "test-spreadsheet")
+    monkeypatch.setenv("INGEST_FILTER_START", start_after)
+    monkeypatch.delenv("FTP_SITE_LATITUDE", raising=False)
+    monkeypatch.delenv("FTP_SITE_LONGITUDE", raising=False)
+    monkeypatch.setitem(sys.modules, "scripts.sheets_client", SimpleNamespace(SheetsClient=lambda _: sheets))
+    monkeypatch.setitem(sys.modules, "scripts.drive_backup", SimpleNamespace(is_enabled=lambda: False, upload_many=Mock()))
+    monkeypatch.setattr(ingest_ftp, "fetch_ftp_csvs", lambda *args, **kwargs: [("sensor-20260616.csv", b"")])
+    monkeypatch.setattr(ingest_ftp, "concat_csvs", lambda _: pd.DataFrame())
+    monkeypatch.setattr(ingest_ftp, "to_published", lambda *args, **kwargs: published.copy())
+    monkeypatch.setattr(ingest_ftp, "select_nine_am", lambda frame: frame.iloc[:0])
+    monkeypatch.setattr(ingest_ftp, "load_alert_rules", lambda _: None)
+    monitored = [MonitoredSensor("fac", "1", 3, "missing")] if monitor_missing else []
+    monkeypatch.setattr(ingest_ftp, "load_monitored_sensors", lambda _: monitored)
+    monkeypatch.setattr(ingest_ftp, "is_smtp_configured", lambda: True)
+    send_email = Mock()
+    monkeypatch.setattr(ingest_ftp, "send_alert_email", send_email)
+
+    assert ingest_ftp.main() == 0
+    assert len(stored["alerts"]) == 1
+    assert stored["alerts"][0][0] == new_date
+    assert stored["alerts"][0][6] == "new"
+    assert len(send_email.call_args.args[0].conditions) == 1
+
+    assert ingest_ftp.main() == 0
+    assert len(stored["alerts"]) == 1
+    assert send_email.call_count == 1
 
 
 def test_completed_ftp_period_end_uses_newest_file_date():
