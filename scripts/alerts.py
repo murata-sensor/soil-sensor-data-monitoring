@@ -185,7 +185,7 @@ def load_monitored_sensors(sheets: "SheetsClient") -> list[MonitoredSensor]:
 class AlertCondition:
     """A single alert occurrence."""
 
-    alert_type: str  # "sensor_fault" or "low_battery"
+    alert_type: str  # Rule type, "recovery", or "ongoing_<rule type>"
     timestamp: str
     addr: str
     sensor_number: str
@@ -215,31 +215,54 @@ class AlertResult:
         return [c for c in self.conditions if c.alert_type == "data_missing"]
 
 
-def check_alerts(published: "pd.DataFrame", rules: list[AlertRule] | None = None) -> AlertResult:
-    """Check published data against alert rules.
+def check_alerts(
+    published: "pd.DataFrame",
+    rules: list[AlertRule] | None = None,
+    previous: "pd.DataFrame | None" = None,
+    existing_alert_rows: Sequence[Sequence[Any]] | None = None,
+    now: datetime | None = None,
+) -> AlertResult:
+    """Notify on state changes and remind once per JST day for ongoing faults.
 
     Args:
         published: DataFrame with columns from PUBLISHED_COLUMNS
                    (date, addr, number, battery1, battery2, bulk_ec, vwc, ...)
         rules: Alert rules to evaluate. If None, uses DEFAULT_RULES.
+        previous: Stored readings used to establish the preceding state.
+                  Missing values do not clear an active abnormal condition.
+        existing_alert_rows: Alert history, enabling daily ongoing reminders
+                             when supplied (including an empty history).
+        now: Notification time; defaults to the current time in JST.
 
     Returns:
-        AlertResult with any detected alert conditions.
+        AlertResult with new conditions, recoveries, and due daily reminders.
     """
+    import pandas as pd
+
     result = AlertResult()
 
-    if published.empty:
+    if published.empty and (previous is None or previous.empty):
         return result
 
     if rules is None:
         rules = DEFAULT_RULES
 
-    for _, row in published.iterrows():
+    readings = published.assign(_notify=True)
+    if previous is not None and not previous.empty:
+        readings = pd.concat([previous.assign(_notify=False), readings], ignore_index=True)
+    readings = readings.assign(
+        _timestamp=pd.to_datetime(readings["date"], format="mixed", utc=True, errors="coerce")
+    ).sort_values("_timestamp", kind="stable")
+    readings = readings.drop_duplicates(["_timestamp", "addr", "number"], keep="first")
+    active: dict[tuple[str, str, int], AlertCondition] = {}
+    started: set[tuple[str, str, int]] = set()
+
+    for _, row in readings.iterrows():
         ts = str(row.get("date", ""))
         addr = str(row.get("addr", ""))
         number = str(row.get("number", ""))
 
-        for rule in rules:
+        for rule_index, rule in enumerate(rules):
             cell_value = _safe_float(row.get(rule.field))
             if cell_value is None:
                 continue
@@ -248,14 +271,67 @@ def check_alerts(published: "pd.DataFrame", rules: list[AlertRule] | None = None
             if op_func is None:
                 continue
 
-            if op_func(cell_value, rule.value):
-                result.conditions.append(AlertCondition(
+            key = (addr, number, rule_index)
+            was_active = key in active
+            is_active = op_func(cell_value, rule.value)
+            if is_active:
+                active[key] = AlertCondition(
                     alert_type=rule.alert_type,
                     timestamp=ts,
                     addr=addr,
                     sensor_number=number,
                     details=f"{rule.field}={cell_value} ({rule.message})",
+                )
+            else:
+                active.pop(key, None)
+
+            if row["_notify"] and is_active != was_active:
+                if is_active:
+                    started.add(key)
+                result.conditions.append(AlertCondition(
+                    alert_type=rule.alert_type if is_active else "recovery",
+                    timestamp=ts,
+                    addr=addr,
+                    sensor_number=number,
+                    details=(
+                        f"{rule.field}={cell_value} ({rule.message})"
+                        if is_active else f"{rule.field}={cell_value} ({rule.message}から復旧)"
+                    ),
                 ))
+
+    if existing_alert_rows is not None:
+        notification_time = now or datetime.now(JST)
+        if notification_time.tzinfo is None:
+            notification_time = notification_time.replace(tzinfo=JST)
+        today = notification_time.astimezone(JST).date()
+        notified_today: set[tuple[str, str, str, str]] = set()
+        for alert_row in existing_alert_rows:
+            if len(alert_row) < 6:
+                continue
+            try:
+                detected_at = datetime.fromisoformat(str(alert_row[1]).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if detected_at.tzinfo is None:
+                detected_at = detected_at.replace(tzinfo=JST)
+            if detected_at.astimezone(JST).date() == today:
+                notified_today.add((
+                    str(alert_row[3]), str(alert_row[4]),
+                    str(alert_row[2]).removeprefix("ongoing_"),
+                    str(alert_row[5]).partition("=")[0],
+                ))
+
+        for key, condition in active.items():
+            marker = (condition.addr, condition.sensor_number, condition.alert_type, rules[key[2]].field)
+            if key in started or marker in notified_today:
+                continue
+            result.conditions.append(AlertCondition(
+                alert_type=f"ongoing_{condition.alert_type}",
+                timestamp=condition.timestamp,
+                addr=condition.addr,
+                sensor_number=condition.sensor_number,
+                details=condition.details,
+            ))
 
     return result
 
@@ -422,15 +498,32 @@ def send_alert_email(result: AlertResult) -> bool:
         return False
 
 
+def _group_alerts(result: AlertResult) -> list[tuple[str, list[AlertCondition]]]:
+    groups: dict[str, list[AlertCondition]] = {}
+    for condition in result.conditions:
+        groups.setdefault(condition.alert_type, []).append(condition)
+    return sorted(groups.items(), key=lambda group: (
+        2 if group[0].startswith("ongoing_") else 1 if group[0] == "recovery" else 0
+    ))
+
+
+def _alert_label(alert_type: str) -> str:
+    labels = {
+        "sensor_fault": "センサ異常",
+        "low_battery": "電池残量低下",
+        "data_missing": "データ受信停止",
+    }
+    if alert_type == "recovery":
+        return "復旧"
+    if alert_type.startswith("ongoing_"):
+        original_type = alert_type.removeprefix("ongoing_")
+        return f"継続中: {labels.get(original_type, original_type)}"
+    return f"新規発生: {labels.get(alert_type, alert_type)}"
+
+
 def _build_subject(result: AlertResult) -> str:
-    """Build email subject line."""
-    parts: list[str] = []
-    if result.sensor_faults:
-        parts.append(f"センサ異常 x{len(result.sensor_faults)}")
-    if result.low_battery:
-        parts.append(f"電池残量低下 x{len(result.low_battery)}")
-    if result.data_missing:
-        parts.append(f"データ受信停止 x{len(result.data_missing)}")
+    """Build email subject line with changes before ongoing reminders."""
+    parts = [f"{_alert_label(alert_type)} x{len(conditions)}" for alert_type, conditions in _group_alerts(result)]
     return f"[土壌センサ警報] {', '.join(parts)}"
 
 
@@ -439,40 +532,17 @@ def _build_body(result: AlertResult) -> str:
     lines: list[str] = []
     lines.append("土壌センサ監視システムからの警報です。\n")
 
-    if result.sensor_faults:
+    for alert_type, conditions in _group_alerts(result):
         lines.append("=" * 50)
-        lines.append("■ センサ異常値検知（接触不良・故障の疑い）")
+        lines.append(f"■ {_alert_label(alert_type)}")
         lines.append("=" * 50)
-        for c in result.sensor_faults:
+        timestamp_label = "最終受信" if alert_type == "data_missing" else "日時"
+        for condition in conditions:
             lines.append(
-                f"  日時: {c.timestamp}  "
-                f"アドレス: {c.addr}  センサ番号: {c.sensor_number}"
+                f"  {timestamp_label}: {condition.timestamp}  "
+                f"アドレス: {condition.addr}  センサ番号: {condition.sensor_number}"
             )
-            lines.append(f"  詳細: {c.details}")
-            lines.append("")
-
-    if result.low_battery:
-        lines.append("=" * 50)
-        lines.append("■ 電池残量低下")
-        lines.append("=" * 50)
-        for c in result.low_battery:
-            lines.append(
-                f"  日時: {c.timestamp}  "
-                f"アドレス: {c.addr}  センサ番号: {c.sensor_number}"
-            )
-            lines.append(f"  詳細: {c.details}")
-            lines.append("")
-
-    if result.data_missing:
-        lines.append("=" * 50)
-        lines.append("■ データ受信停止")
-        lines.append("=" * 50)
-        for c in result.data_missing:
-            lines.append(
-                f"  最終受信: {c.timestamp}  "
-                f"アドレス: {c.addr}  センサ番号: {c.sensor_number}"
-            )
-            lines.append(f"  詳細: {c.details}")
+            lines.append(f"  詳細: {condition.details}")
             lines.append("")
 
     lines.append("---")

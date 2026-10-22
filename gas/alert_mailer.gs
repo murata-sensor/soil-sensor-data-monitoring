@@ -102,9 +102,11 @@ function _buildSubject(rows, header) {
 
   var labels = _getAlertTypeLabels();
   var parts = [];
-  var keys = Object.keys(counts);
+  var keys = Object.keys(counts).sort(function (left, right) {
+    return _alertPriority(left) - _alertPriority(right);
+  });
   for (var j = 0; j < keys.length; j++) {
-    var label = labels[keys[j]] || keys[j];
+    var label = _alertTypeLabel(keys[j], labels);
     parts.push(label + ' x' + counts[keys[j]]);
   }
   if (parts.length === 0) parts.push('アラート x' + rows.length);
@@ -140,11 +142,14 @@ function _buildBody(rows, header) {
   }
 
   var labels = _getAlertTypeLabels();
+  groupOrder.sort(function (left, right) {
+    return _alertPriority(left) - _alertPriority(right);
+  });
 
   for (var g = 0; g < groupOrder.length; g++) {
     var groupType = groupOrder[g];
     var groupRows = groups[groupType];
-    var label = labels[groupType] ? ('■ ' + labels[groupType]) : ('■ ' + groupType);
+    var label = '■ ' + _alertTypeLabel(groupType, labels);
 
     lines.push('==================================================');
     lines.push(label);
@@ -163,6 +168,20 @@ function _buildBody(rows, header) {
   lines.push('検知日時: ' + (detectedIdx >= 0 ? String(rows[0][detectedIdx]) : ''));
   lines.push('このメールは自動送信されています。');
   return lines.join('\n');
+}
+
+function _alertPriority(alertType) {
+  if (alertType.indexOf('ongoing_') === 0) return 2;
+  return alertType === 'recovery' ? 1 : 0;
+}
+
+function _alertTypeLabel(alertType, labels) {
+  if (alertType === 'recovery') return '復旧';
+  if (alertType.indexOf('ongoing_') === 0) {
+    var originalType = alertType.slice('ongoing_'.length);
+    return '継続中: ' + (labels[originalType] || originalType);
+  }
+  return '新規発生: ' + (labels[alertType] || alertType);
 }
 
 function _cell(row, idx) {

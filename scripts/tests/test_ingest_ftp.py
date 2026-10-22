@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -25,14 +26,15 @@ from scripts.ingest_ftp import (
     "2026-06-15T09:00:00+09:00",
 ])
 @pytest.mark.parametrize("monitor_missing", [False, True])
-def test_main_alerts_only_for_new_readings_on_repeated_ingestion(monkeypatch, start_after, monitor_missing):
+@pytest.mark.parametrize("initial_battery", [2.0, 3.0])
+def test_main_alerts_only_once_per_day_on_repeated_ingestion(monkeypatch, start_after, monitor_missing, initial_battery):
     old_date = "2026-06-15 09:00:00+09:00"
     new_date = "2026-06-16 08:30:00+09:00"
     published = pd.DataFrame({
         "date": [old_date, new_date],
         "addr": ["fac", "fac"],
         "number": ["1", "1"],
-        "battery2": [2.0, 2.0],
+        "battery2": [initial_battery, 2.0],
     })
     stored = {
         "sensor_raw": [published.iloc[0].tolist()],
@@ -46,7 +48,10 @@ def test_main_alerts_only_for_new_readings_on_repeated_ingestion(monkeypatch, st
 
     sheets = Mock()
     sheets.last_date.side_effect = lambda sheet: stored[sheet][-1][0]
-    sheets.get_values.side_effect = lambda range_: stored[range_.split("!")[0]]
+    sheets.get_values.side_effect = lambda range_: (
+        [published.columns.tolist()] + stored["sensor_raw"]
+        if range_ == "sensor_raw!A1:Z" else stored[range_.split("!")[0]]
+    )
     sheets.append_rows.side_effect = append_rows
     monkeypatch.setenv("FTP_SPREADSHEET_ID", "test-spreadsheet")
     monkeypatch.setenv("INGEST_FILTER_START", start_after)
@@ -68,12 +73,29 @@ def test_main_alerts_only_for_new_readings_on_repeated_ingestion(monkeypatch, st
     assert ingest_ftp.main() == 0
     assert len(stored["alerts"]) == 1
     assert stored["alerts"][0][0] == new_date
+    assert stored["alerts"][0][2] == ("ongoing_low_battery" if initial_battery < 2.5 else "low_battery")
     assert stored["alerts"][0][6] == "new"
     assert len(send_email.call_args.args[0].conditions) == 1
 
     assert ingest_ftp.main() == 0
     assert len(stored["alerts"]) == 1
     assert send_email.call_count == 1
+
+    class NextDayDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.now(tz) + timedelta(days=1)
+
+    monkeypatch.setattr("scripts.alerts.datetime", NextDayDateTime)
+
+    assert ingest_ftp.main() == 0
+    assert len(stored["alerts"]) == 2
+    assert stored["alerts"][1][2] == "ongoing_low_battery"
+    assert send_email.call_count == 2
+
+    assert ingest_ftp.main() == 0
+    assert len(stored["alerts"]) == 2
+    assert send_email.call_count == 2
 
 
 def test_completed_ftp_period_end_uses_newest_file_date():

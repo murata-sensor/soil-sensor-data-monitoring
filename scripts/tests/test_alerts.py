@@ -5,6 +5,7 @@ import pytest
 
 from scripts.alerts import (
     DEFAULT_RULES,
+    AlertCondition,
     AlertResult,
     AlertRule,
     MonitoredSensor,
@@ -150,6 +151,156 @@ class TestCheckAlerts:
         assert c.sensor_number == "1"
         assert c.alert_type == "sensor_fault"
 
+    def test_continuing_fault_and_changing_low_battery_are_not_repeated(self):
+        previous = _make_published(battery2=2.4, bulk_ec=BULK_EC_FAULT_VALUE)
+        current = _make_published(
+            date="2026-06-16 09:00:00+09:00", battery2=2.0, bulk_ec=BULK_EC_FAULT_VALUE,
+        )
+
+        assert not check_alerts(current, previous=previous).has_alerts
+
+    def test_new_fault_is_not_hidden_by_existing_fault(self):
+        previous = _make_published(bulk_ec=BULK_EC_FAULT_VALUE)
+        current = _make_published(
+            date="2026-06-16 09:00:00+09:00",
+            bulk_ec=BULK_EC_FAULT_VALUE, vwc=VWC_FAULT_VALUE,
+        )
+
+        result = check_alerts(current, previous=previous)
+
+        assert len(result.conditions) == 1
+        assert "vwc=" in result.sensor_faults[0].details
+
+    def test_recovery_and_recurrence_are_notified_in_time_order(self):
+        previous = _make_published(battery2=2.0)
+        recovered = _make_published(date="2026-06-16 09:00:00+09:00")
+        recurring = _make_published(date="2026-06-17 09:00:00+09:00", battery2=2.1)
+        current = pd.concat([recurring, recovered], ignore_index=True)
+
+        result = check_alerts(current, previous=previous)
+
+        assert [condition.alert_type for condition in result.conditions] == ["recovery", "low_battery"]
+        assert "battery2=3.0" in result.conditions[0].details
+        assert "復旧" in result.conditions[0].details
+
+    def test_missing_value_does_not_recover_or_rearm(self):
+        previous = pd.concat([
+            _make_published(battery2=2.0),
+            _make_published(date="2026-06-16 09:00:00+09:00", battery2=float("nan")),
+        ], ignore_index=True)
+        current = _make_published(date="2026-06-17 09:00:00+09:00", battery2=2.1)
+
+        assert not check_alerts(current, previous=previous).has_alerts
+
+    def test_repeated_abnormal_readings_in_one_batch_notify_once(self):
+        current = pd.concat([
+            _make_published(battery2=2.4),
+            _make_published(date="2026-06-16 09:00:00+09:00", battery2=2.0),
+        ], ignore_index=True)
+
+        assert len(check_alerts(current).low_battery) == 1
+
+    @pytest.mark.parametrize("identity", [{"addr": "2b"}, {"number": "2"}])
+    def test_other_sensors_are_not_suppressed(self, identity):
+        previous = _make_published(battery2=2.0)
+        current = _make_published(date="2026-06-16 09:00:00+09:00", battery2=2.0, **identity)
+
+        assert len(check_alerts(current, previous=previous).low_battery) == 1
+
+    def test_overlapping_history_does_not_repeat_or_recover(self):
+        previous = _make_published(battery2=2.0)
+
+        assert not check_alerts(previous, previous=previous).has_alerts
+
+
+class TestDailyReminders:
+    now = pd.Timestamp("2026-06-16T09:00:00+09:00").to_pydatetime()
+
+    def test_ongoing_reminder_even_without_new_readings(self):
+        previous = _make_published(battery2=2.0)
+
+        result = check_alerts(
+            previous.iloc[:0], previous=previous, existing_alert_rows=[], now=self.now,
+        )
+
+        assert len(result.conditions) == 1
+        assert result.conditions[0].alert_type == "ongoing_low_battery"
+        assert "battery2=2.0" in result.conditions[0].details
+
+    @pytest.mark.parametrize("alert_type", ["low_battery", "ongoing_low_battery"])
+    @pytest.mark.parametrize("status", ["new", "sent"])
+    def test_no_repeat_if_already_registered_today(self, alert_type, status):
+        previous = _make_published(battery2=2.4)
+        current = _make_published(date="2026-06-16 08:00:00+09:00", battery2=2.0)
+        existing = [[
+            previous.iloc[0]["date"], "2026-06-16 00:00:00+09:00", alert_type,
+            "1a", "1", "battery2=2.4 (電池残量低下)", status,
+        ]]
+
+        result = check_alerts(
+            current, previous=previous, existing_alert_rows=existing, now=self.now,
+        )
+
+        assert not result.has_alerts
+
+    def test_reminds_on_next_jst_day_not_after_24_hours(self):
+        previous = _make_published(battery2=2.0)
+        existing = [[
+            previous.iloc[0]["date"], "2026-06-15 23:59:00+09:00", "ongoing_low_battery",
+            "1a", "1", "battery2=2.0 (電池残量低下)", "sent",
+        ]]
+        midnight = pd.Timestamp("2026-06-15T15:00:00Z").to_pydatetime()
+
+        result = check_alerts(
+            previous.iloc[:0], previous=previous, existing_alert_rows=existing, now=midnight,
+        )
+
+        assert len(result.conditions) == 1
+
+    def test_utc_notification_date_is_compared_in_jst(self):
+        previous = _make_published(battery2=2.0)
+        existing = [[
+            previous.iloc[0]["date"], "2026-06-15T15:00:00Z", "low_battery",
+            "1a", "1", "battery2=2.0 (電池残量低下)", "sent",
+        ]]
+
+        result = check_alerts(
+            previous.iloc[:0], previous=previous, existing_alert_rows=existing, now=self.now,
+        )
+
+        assert not result.has_alerts
+
+    def test_new_fault_is_not_duplicated_as_ongoing(self):
+        result = check_alerts(
+            _make_published(battery2=2.0), existing_alert_rows=[], now=self.now,
+        )
+
+        assert [condition.alert_type for condition in result.conditions] == ["low_battery"]
+
+    def test_recovered_fault_is_not_reminded(self):
+        previous = _make_published(battery2=2.0)
+        current = _make_published(date="2026-06-16 08:00:00+09:00")
+
+        result = check_alerts(
+            current, previous=previous, existing_alert_rows=[], now=self.now,
+        )
+
+        assert [condition.alert_type for condition in result.conditions] == ["recovery"]
+
+    def test_notification_for_other_sensor_or_field_does_not_suppress(self):
+        previous = _make_published(bulk_ec=BULK_EC_FAULT_VALUE, vwc=VWC_FAULT_VALUE)
+        existing = [
+            ["", "2026-06-16 08:00:00+09:00", "sensor_fault", "1a", "1", "bulk_ec=32.768 (故障)", "sent"],
+            ["", "2026-06-16 08:00:00+09:00", "sensor_fault", "1a", "2", "vwc=3276.8 (故障)", "sent"],
+        ]
+
+        result = check_alerts(
+            previous.iloc[:0], previous=previous, existing_alert_rows=existing, now=self.now,
+        )
+
+        assert len(result.conditions) == 1
+        assert "vwc=" in result.conditions[0].details
+
 
 class TestCheckMissingData:
     monitored = [
@@ -260,6 +411,24 @@ class TestBuildEmail:
         assert "1a" in body
         assert "bulk_ec" in body
         assert "battery2=2.0" in body
+
+    def test_changes_appear_before_ongoing_in_subject_and_body(self):
+        result = AlertResult(conditions=[
+            AlertCondition("ongoing_low_battery", "old", "1a", "1", "battery2=2.0 (電池残量低下)"),
+            AlertCondition("recovery", "now", "1a", "2", "vwc=25.0 (センサ異常から復旧)"),
+            AlertCondition("sensor_fault", "now", "1a", "3", "bulk_ec=32.768 (センサ異常)"),
+        ])
+
+        for text in (_build_subject(result), _build_body(result)):
+            assert text.index("新規発生") < text.index("復旧") < text.index("継続中")
+        assert "battery2=2.0" in _build_body(result)
+
+    def test_custom_rule_is_included_in_email(self):
+        rule = AlertRule("soil_temp", ">", 40, "overtemp", "温度異常")
+        result = check_alerts(_make_published(soil_temp=50), rules=[rule])
+
+        assert "overtemp" in _build_subject(result)
+        assert "soil_temp=50.0" in _build_body(result)
 
 
 class TestIsSmtpConfigured:

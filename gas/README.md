@@ -31,6 +31,10 @@ Script Properties: `ADMIN_ALLOWED_EMAILS`、`GOOGLE_OAUTH_CLIENT_ID`。
 Script Properties: `ALERT_TO`（送信先メールアドレス、カンマ区切り）。
 WebApp デプロイは不要。時間ベースのトリガー（5分間隔等）で `processNewAlerts` を呼ぶ。
 
+電池残量低下・測定異常の新規発生・復旧と、継続中の1日1回（JST）の通知はPythonの取り込み処理で判定する。
+メールの件名・本文は「新規発生 → 復旧 → 継続中」の順に表示する。
+この動作を適用する際は、Pythonと本スクリプトの両方を更新する。シートの列追加やトリガー追加は不要。
+
 ## デプロイ
 
 各ファイル群を該当スプレッドシートの GAS プロジェクトに貼り付け、
