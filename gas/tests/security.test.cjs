@@ -452,6 +452,45 @@ test('admin lock contention does not write and a failed write releases the lock 
   assert.equal(failed.state().released, true);
 });
 
+test('admin saves reject callers removed from the allowlist while waiting for the lock', () => {
+  const { call, properties, services, state } = adminFixture();
+  properties.ADMIN_ALLOWED_EMAILS = 'viewer@example.test,other@example.test';
+  const getLock = services.LockService.getScriptLock;
+  services.LockService.getScriptLock = () => {
+    const lock = getLock();
+    return { ...lock, tryLock: (...args) => {
+      const acquired = lock.tryLock(...args);
+      properties.ADMIN_ALLOWED_EMAILS = 'other@example.test';
+      return acquired;
+    } };
+  };
+  assert.equal(call({ rows: [['key', 'value'], ['synthetic', 'saved']] }).error, 'forbidden');
+  assert.equal(state().written, undefined);
+  assert.equal(state().cleared, false);
+  assert.equal(state().released, true);
+});
+
+test('users saves require an admin in the latest allowlist after waiting for the lock', () => {
+  const { call, properties, services, state } = adminFixture();
+  properties.ADMIN_ALLOWED_EMAILS = 'viewer@example.test,other@example.test';
+  const revision = call({ action: 'getSheet', sheet: 'users' }).revision;
+  const getLock = services.LockService.getScriptLock;
+  services.LockService.getScriptLock = () => {
+    const lock = getLock();
+    return { ...lock, tryLock: (...args) => {
+      const acquired = lock.tryLock(...args);
+      properties.ADMIN_ALLOWED_EMAILS = 'viewer@example.test';
+      return acquired;
+    } };
+  };
+  const rows = [['email', 'role', 'enabled'], ['viewer@example.test', 'viewer', 'TRUE'],
+    ['other@example.test', 'admin', 'TRUE']];
+  assert.equal(call({ sheet: 'users', rows, expectedRevision: revision }).error, 'admin_required');
+  assert.equal(state().written, undefined);
+  assert.equal(state().cleared, false);
+  assert.equal(state().released, true);
+});
+
 test('standalone read and admin projects can explicitly open their registry', () => {
   for (const filename of ['read_proxy.gs', 'admin_api.gs']) {
     const fixture = filename === 'admin_api.gs' ? adminFixture() : proxyFixture();

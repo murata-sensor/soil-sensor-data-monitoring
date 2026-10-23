@@ -50,8 +50,10 @@ let sessionClosed = false;
 let sessionEmail: string | null = null;
 let identityRenewal: { email: string; promise: Promise<string>; cancel: () => void } | null = null;
 let accessRenewal: { promise: Promise<string>; cancel: () => void } | null = null;
+let initialStoredSession: { user: string | null; loginAt: string | null } | null = null;
 
 try {
+  initialStoredSession = { user: readStoredItem(STORAGE_KEY_USER), loginAt: readStoredItem(STORAGE_KEY_LOGIN_AT) };
   accessToken = readStoredItem(STORAGE_KEY_TOKEN);
   accessTokenExpiry = Number(readStoredItem(STORAGE_KEY_EXPIRY) || "0");
 } catch {
@@ -105,17 +107,30 @@ export function restoreSession(): SignedInUser | null {
       closeChangedSession();
       return null;
     }
-    const loginAt = Number(readStoredItem(STORAGE_KEY_LOGIN_AT) || "0");
+    const storedLoginAt = readStoredItem(STORAGE_KEY_LOGIN_AT);
+    if (initialStoredSession) {
+      let initialEmail: string | null = null;
+      try {
+        if (initialStoredSession.user) initialEmail = parseStoredUser(initialStoredSession.user).email.trim().toLowerCase();
+      } catch { /* An unreadable original identity cannot own the cached token. */ }
+      if (initialEmail !== email || initialStoredSession.loginAt !== storedLoginAt) {
+        closeChangedSession();
+        return null;
+      }
+    }
+    const loginAt = Number(storedLoginAt || "0");
     const now = Date.now();
     if (!Number.isFinite(loginAt) || loginAt <= 0 || loginAt > now
       || now - loginAt > SESSION_MAX_DAYS * 86_400_000) {
       signOut();
       return null;
     }
+    initialStoredSession = null;
     sessionEmail = email;
     return user;
   } catch {
-    signOut();
+    if (storageReadFailed) closeChangedSession();
+    else signOut();
     return null;
   }
 }
@@ -273,6 +288,12 @@ function decodeJwt(token: string): Record<string, unknown> {
 
 export function renderSignInButton(el: HTMLElement, onUser: (u: SignedInUser) => void): () => void {
   const version = sessionVersion;
+  let storedSession: { user: string | null; loginAt: string | null } | null = null;
+  try {
+    storedSession = { user: readStoredItem(STORAGE_KEY_USER), loginAt: readStoredItem(STORAGE_KEY_LOGIN_AT) };
+  } catch {
+    // Without the original state, a delayed response cannot safely replace it.
+  }
   let active = true;
   let timer: number | undefined;
   const dispose = () => {
@@ -283,6 +304,19 @@ export function renderSignInButton(el: HTMLElement, onUser: (u: SignedInUser) =>
   const handleCredential = (credential: string) => {
     if (!active || version !== sessionVersion) return;
     dispose();
+    try {
+      if (!storedSession) throw new SignInRequiredError();
+      const currentUser = readStoredItem(STORAGE_KEY_USER);
+      const currentLoginAt = readStoredItem(STORAGE_KEY_LOGIN_AT);
+      if (currentUser !== storedSession.user || currentLoginAt !== storedSession.loginAt) {
+        closeChangedSession();
+        return;
+      }
+    } catch {
+      closeChangedSession();
+      window.dispatchEvent(new Event(AUTH_STORAGE_FAILED_EVENT));
+      return;
+    }
     let u: SignedInUser;
     try {
       const payload = decodeJwt(credential);
@@ -382,6 +416,7 @@ export async function requestConsentToken(): Promise<string> {
 function closeLocalSession(): void {
   sessionClosed = true;
   sessionEmail = null;
+  initialStoredSession = null;
   sessionVersion += 1;
   identityRenewal?.cancel();
   identityRenewal = null;

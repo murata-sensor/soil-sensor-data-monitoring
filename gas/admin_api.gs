@@ -42,6 +42,11 @@ function _adminRows(rows) {
   });
 }
 
+function _adminAllowedEmails() {
+  return (PropertiesService.getScriptProperties().getProperty('ADMIN_ALLOWED_EMAILS') || '')
+    .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+}
+
 function _adminIsEnabledAdmin(ss, email) {
   const users = ss.getSheetByName('users');
   if (!users) return false;
@@ -85,9 +90,7 @@ function doPost(e) {
     if (contents.length > 1000000) return _adminJson({ ok: false, error: 'request too large' });
     const body = JSON.parse(contents);
     const email = _adminVerifyIdToken(body.idToken);
-    const allowed = (PropertiesService.getScriptProperties()
-      .getProperty('ADMIN_ALLOWED_EMAILS') || '')
-      .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+    const allowed = _adminAllowedEmails();
     if (!allowed.includes(email.toLowerCase())) {
       return _adminJson({ ok: false, error: 'forbidden' });
     }
@@ -118,7 +121,13 @@ function doPost(e) {
       const lock = LockService.getScriptLock();
       if (!lock.tryLock(10000)) return _adminJson({ ok: false, error: 'busy; retry later' });
       try {
-        if (!_adminIsEnabledAdmin(ss, email)) return _adminJson({ ok: false, error: 'forbidden' });
+        const currentAllowed = _adminAllowedEmails();
+        if (!currentAllowed.includes(email.toLowerCase()) || !_adminIsEnabledAdmin(ss, email)) {
+          return _adminJson({ ok: false, error: 'forbidden' });
+        }
+        if (sheet === 'users' && !currentAllowed.some((admin) => _adminRowsHaveEnabledAdmin(rows, admin))) {
+          return _adminJson({ ok: false, error: 'admin_required' });
+        }
         let sh = ss.getSheetByName(sheet);
         const existing = sh ? sh.getDataRange().getValues() : [];
         if (body.expectedRevision !== _adminRevision(existing)) {

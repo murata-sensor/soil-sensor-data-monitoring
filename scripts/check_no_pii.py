@@ -56,7 +56,7 @@ def iter_files():
             continue
         if any(part in EXCLUDE_DIRS for part in Path(name).parts):
             continue
-        if path.suffix.lower() not in INCLUDE_SUFFIXES and not path.name.startswith(".env"):
+        if path.suffix and path.suffix.lower() not in INCLUDE_SUFFIXES and not path.name.startswith(".env"):
             continue
         yield path
 
