@@ -180,27 +180,29 @@ export function getValidIdToken(token: string): Promise<string> {
   if (identityRenewal) {
     return identityRenewal.email === email ? identityRenewal.promise : Promise.reject(new SignInRequiredError());
   }
-  if (!window.google) {
-    window.dispatchEvent(new Event(SIGN_IN_REQUIRED_EVENT));
-    return Promise.reject(new SignInRequiredError());
-  }
   const version = sessionVersion;
   let cancel = () => {};
   const promise = new Promise<string>((resolve, reject) => {
     let settled = false;
+    let waitTimer: number | undefined;
     const finish = (user?: SignedInUser) => {
       if (settled) return;
       settled = true;
       window.clearTimeout(timeout);
-      if (!user || version !== sessionVersion) {
+      window.clearTimeout(waitTimer);
+      if (version !== sessionVersion) {
         reject(new SignInRequiredError());
-        if (version === sessionVersion) window.dispatchEvent(new Event(SIGN_IN_REQUIRED_EVENT));
         return;
       }
       try {
         requireSession(email);
       } catch {
         reject(new SignInRequiredError());
+        return;
+      }
+      if (!user) {
+        reject(new SignInRequiredError());
+        window.dispatchEvent(new Event(SIGN_IN_REQUIRED_EVENT));
         return;
       }
       try {
@@ -216,29 +218,41 @@ export function getValidIdToken(token: string): Promise<string> {
     };
     const timeout = window.setTimeout(() => finish(), 15000);
     cancel = () => finish();
-    try {
-      window.google!.accounts.id.initialize({
-        client_id: CLIENT_ID,
-        auto_select: true,
-        callback: (response) => {
-          try {
-            const payload = decodeJwt(response.credential);
-            const user: SignedInUser = {
-              email: String(payload.email || "").trim().toLowerCase(),
-              name: typeof payload.name === "string" ? payload.name : undefined,
-              picture: typeof payload.picture === "string" ? payload.picture : undefined,
-              idToken: response.credential,
-            };
-            finish(user.email === email && !isIdTokenExpired(user) ? user : undefined);
-          } catch {
-            finish();
-          }
-        },
-      });
-      window.google!.accounts.id.prompt();
-    } catch {
-      finish();
-    }
+    const initialize = () => {
+      if (settled) return;
+      if (version !== sessionVersion) { finish(); return; }
+      if (!window.google) {
+        waitTimer = window.setTimeout(initialize, 200);
+        return;
+      }
+      try {
+        // Loading the library must not revive an expired or changed session.
+        requireSession(email);
+        window.google.accounts.id.initialize({
+          client_id: CLIENT_ID,
+          auto_select: true,
+          login_hint: email,
+          callback: (response) => {
+            try {
+              const payload = decodeJwt(response.credential);
+              const user: SignedInUser = {
+                email: String(payload.email || "").trim().toLowerCase(),
+                name: typeof payload.name === "string" ? payload.name : undefined,
+                picture: typeof payload.picture === "string" ? payload.picture : undefined,
+                idToken: response.credential,
+              };
+              finish(user.email === email && !isIdTokenExpired(user) ? user : undefined);
+            } catch {
+              finish();
+            }
+          },
+        });
+        window.google.accounts.id.prompt();
+      } catch {
+        finish();
+      }
+    };
+    initialize();
   });
   identityRenewal = { email, promise, cancel: () => cancel() };
   const release = () => { if (identityRenewal?.promise === promise) identityRenewal = null; };
@@ -251,7 +265,7 @@ function saveSession(u: SignedInUser, renewal = false): void {
   if (!renewal) {
     // A fresh sign-in starts a new local session. The shared cache may belong
     // to another tab's account, so discard it without revoking that account.
-    closeLocalSession();
+    closeLocalSession(false);
     localStorage.removeItem(STORAGE_KEY_TOKEN);
     localStorage.removeItem(STORAGE_KEY_EXPIRY);
     const loginAt = Number(readStoredItem(STORAGE_KEY_LOGIN_AT) || "0");
@@ -360,7 +374,10 @@ export function renderSignInButton(el: HTMLElement, onUser: (u: SignedInUser) =>
     window.google.accounts.id.initialize({
       client_id: CLIENT_ID,
       callback: (resp) => handleCredential(resp.credential),
-      auto_select: true, // Enable auto-select for returning users (One Tap)
+      auto_select: !sessionClosed,
+      use_fedcm_for_button: true,
+      // A click can reuse an approved account; after logout, allow choosing again.
+      button_auto_select: !sessionClosed,
     });
 
     // Show One Tap prompt for returning users (no click needed)
@@ -408,12 +425,10 @@ export async function getAccessToken(): Promise<string> {
 
 /** Call from a click handler to grant Sheets access with explicit user gesture. */
 export async function requestConsentToken(): Promise<string> {
-  requireSession();
-  if (!window.google) throw new Error("Google Identity Services not loaded");
-  return requestToken("consent");
+  return getAccessToken();
 }
 
-function closeLocalSession(): void {
+function closeLocalSession(disableGoogleAutoSelect = true): void {
   sessionClosed = true;
   sessionEmail = null;
   initialStoredSession = null;
@@ -431,7 +446,7 @@ function closeLocalSession(): void {
   accessTokenExpiry = 0;
 
   try {
-    googleAny?.accounts?.id?.disableAutoSelect?.();
+    if (disableGoogleAutoSelect) googleAny?.accounts?.id?.disableAutoSelect?.();
   } catch {
     // Ignore GIS runtime errors during sign-out.
   }
@@ -511,6 +526,7 @@ function requestToken(prompt: string): Promise<string> {
       const client = window.google!.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: SHEETS_SCOPE,
+        login_hint: email,
         callback: (resp) => {
           if (settled) return;
           if (version !== sessionVersion) return fail(new SignInRequiredError());

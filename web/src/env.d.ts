@@ -18,6 +18,7 @@ declare global {
           initTokenClient: (cfg: {
             client_id: string;
             scope: string;
+            login_hint?: string;
             callback: (resp: { access_token: string; expires_in: number }) => void;
             error_callback?: (err: { type: string; message?: string }) => void;
           }) => { requestAccessToken: (opts?: { prompt?: string }) => void };
@@ -27,6 +28,9 @@ declare global {
             client_id: string;
             callback: (resp: { credential: string }) => void;
             auto_select?: boolean;
+            login_hint?: string;
+            use_fedcm_for_button?: boolean;
+            button_auto_select?: boolean;
           }) => void;
           prompt: () => void;
           renderButton: (el: HTMLElement, opts: Record<string, unknown>) => void;
