@@ -1,4 +1,6 @@
 import type { EventRow, SubstrateType } from "./types";
+import type { TextPanelConfig } from "./layoutConfig";
+import { isFiniteNumber, isMetric, isNonEmptyString, isPosition, isRecord, isString, readFontSize } from "./configValidation";
 
 /**
  * Per-user dashboard settings persisted in localStorage.
@@ -90,48 +92,143 @@ export interface UserChartPanel {
   yMax?: number;
 }
 
-const DEFAULT_SETTINGS: UserSettings = {
-  dateRange: { type: "last7d" },
-  panelSettings: {},
-  layoutsBySource: {},
-  deviceColors: {},
-  ftpSheetName: "sensor_raw",
-  showAirTemperature: false,
-  showPrecipitation: false,
-  showSunshine: false,
-  showEventLabels: true,
-  substrateTypes: {},
-  selectedSourceId: null,
-  savedPresets: [],
-  localEvents: [],
-  textOverrides: {},
-  userTextPanels: [],
-  userChartPanels: [],
-};
+function createDefaultSettings(): UserSettings {
+  return {
+    dateRange: { type: "last7d" },
+    panelSettings: {},
+    layoutsBySource: {},
+    deviceColors: {},
+    ftpSheetName: "sensor_raw",
+    showAirTemperature: false,
+    showPrecipitation: false,
+    showSunshine: false,
+    showEventLabels: true,
+    substrateTypes: {},
+    selectedSourceId: null,
+    savedPresets: [],
+    localEvents: [],
+    textOverrides: {},
+    userTextPanels: [],
+    userChartPanels: [],
+  };
+}
 
 function storageKey(email: string): string {
   return `soil-sensor-settings-${email.toLowerCase()}`;
 }
 
-/** Settings shape before layouts were stored per source. */
-interface LegacySettings {
-  layout?: LayoutItem[] | null;
+function readMap<T>(value: unknown, read: (entry: unknown) => T | undefined): Record<string, T> {
+  const entries = isRecord(value) ? Object.entries(value) : [];
+  return Object.fromEntries(entries.flatMap(([key, entry]) => {
+    const parsed = read(entry);
+    return parsed === undefined ? [] : [[key, parsed]];
+  }));
+}
+
+function readList<T>(value: unknown, read: (entry: unknown) => T | undefined): T[] {
+  return Array.isArray(value) ? value.flatMap((entry) => {
+    const parsed = read(entry);
+    return parsed === undefined ? [] : [parsed];
+  }) : [];
+}
+
+function readString(value: unknown): string | undefined {
+  return isString(value) ? value : undefined;
+}
+
+function readSubstrate(value: unknown): SubstrateType | undefined {
+  return value === "soil" || value === "rockwool" || value === "cocopeat" || value === "all" ? value : undefined;
+}
+
+function readLayout(value: unknown): LayoutItem[] | undefined {
+  const items = readList(value, (entry): LayoutItem | undefined =>
+    isRecord(entry) && isNonEmptyString(entry.i) && isPosition(entry)
+      ? { i: entry.i, x: entry.x, y: entry.y, w: entry.w, h: entry.h } : undefined);
+  return items.length ? items : undefined;
+}
+
+function readPanelSettings(value: unknown): PanelSettings | undefined {
+  if (!isRecord(value)) return undefined;
+  return {
+    yMin: isFiniteNumber(value.yMin) ? value.yMin : undefined,
+    yMax: isFiniteNumber(value.yMax) ? value.yMax : undefined,
+    yLabel: readString(value.yLabel),
+    showPoints: typeof value.showPoints === "boolean" ? value.showPoints : undefined,
+  };
+}
+
+function readChartPanel(value: unknown): UserChartPanel | undefined {
+  if (!isRecord(value) || !isNonEmptyString(value.id) || !isString(value.title)
+    || !isMetric(value.metric) || !isPosition(value)) return undefined;
+  return {
+    id: value.id, title: value.title, metric: value.metric,
+    x: value.x, y: value.y, w: value.w, h: value.h,
+    yMin: isFiniteNumber(value.yMin) ? value.yMin : undefined,
+    yMax: isFiniteNumber(value.yMax) ? value.yMax : undefined,
+  };
+}
+
+function readTextPanel(value: unknown): TextPanelConfig | undefined {
+  if (!isRecord(value) || value.type !== "text" || !isNonEmptyString(value.id) || !isPosition(value.position)) return undefined;
+  const { x, y, w, h } = value.position;
+  return {
+    type: "text", id: value.id, position: { x, y, w, h },
+    content: readString(value.content), fontSize: readFontSize(value.fontSize),
+    align: value.align === "left" || value.align === "center" || value.align === "right" ? value.align : undefined,
+    contentRef: isFiniteNumber(value.contentRef) && Number.isInteger(value.contentRef) && value.contentRef >= 0
+      ? value.contentRef : undefined,
+  };
+}
+
+function readEvent(value: unknown): EventRow | undefined {
+  if (!isRecord(value) || !isString(value.date) || !Number.isFinite(parseTs(value.date)) || !isString(value.label)) return undefined;
+  return {
+    date: value.date, label: value.label, color: readString(value.color), deviceId: readString(value.deviceId),
+    enabled: typeof value.enabled === "boolean" ? value.enabled : undefined,
+  };
+}
+
+/** Fields shared by the dashboard and saved presets use the same validation. */
+function readDisplaySettings(value: Record<string, unknown>) {
+  return {
+    dateRange: isDateRange(value.dateRange) ? value.dateRange : { type: "last7d" as const },
+    panelSettings: readMap(value.panelSettings, readPanelSettings),
+    deviceColors: readMap(value.deviceColors, readString),
+    substrateTypes: readMap(value.substrateTypes, readSubstrate),
+    ftpSheetName: isNonEmptyString(value.ftpSheetName) ? value.ftpSheetName : "sensor_raw",
+  };
+}
+
+function readPreset(value: unknown): LayoutPreset | undefined {
+  if (!isRecord(value) || !isNonEmptyString(value.id) || !isString(value.name)
+    || !isString(value.createdAt) || !Number.isFinite(Date.parse(value.createdAt))) return undefined;
+  return {
+    id: value.id, name: value.name, createdAt: value.createdAt,
+    sourceId: isNonEmptyString(value.sourceId) ? value.sourceId : null,
+    layout: readLayout(value.layout) ?? null,
+    ...readDisplaySettings(value),
+  };
 }
 
 /**
  * Moves the single shared layout of the old format under the source it was
  * last used with, so it no longer leaks into every other source.
  */
-function migrate(stored: UserSettings & LegacySettings): UserSettings {
-  const { layout, ...settings } = stored;
+function migrate(settings: UserSettings, legacyLayout: unknown): UserSettings {
+  const layout = readLayout(legacyLayout);
   const sourceId = settings.selectedSourceId;
-  if (!layout?.length || !sourceId || settings.layoutsBySource[sourceId]) {
+  if (!layout || !sourceId || Object.hasOwn(settings.layoutsBySource, sourceId)) {
     return settings;
   }
   return {
     ...settings,
     layoutsBySource: { ...settings.layoutsBySource, [sourceId]: layout },
   };
+}
+
+/** Dictionary lookups must not return inherited properties such as toString. */
+export function getOwnValue<T>(values: Record<string, T> | undefined, key: string): T | undefined {
+  return values && Object.hasOwn(values, key) ? values[key] : undefined;
 }
 
 /** Replaces one source's layout, or drops it when `layout` is null/empty. */
@@ -141,19 +238,35 @@ export function withSourceLayout(
   layout: LayoutItem[] | null,
 ): Record<string, LayoutItem[]> {
   if (!sourceId) return layoutsBySource;
+  if (layout?.length) return { ...layoutsBySource, [sourceId]: layout };
   const next = { ...layoutsBySource };
-  if (layout?.length) next[sourceId] = layout;
-  else delete next[sourceId];
+  delete next[sourceId];
   return next;
 }
 
 export function loadSettings(email: string): UserSettings {
+  const defaults = createDefaultSettings();
   try {
     const raw = localStorage.getItem(storageKey(email));
-    if (!raw) return { ...DEFAULT_SETTINGS };
-    return migrate({ ...DEFAULT_SETTINGS, ...JSON.parse(raw) });
+    if (!raw) return defaults;
+    const stored: unknown = JSON.parse(raw);
+    if (!isRecord(stored)) return defaults;
+    const settings: UserSettings = {
+      ...defaults, ...readDisplaySettings(stored),
+      layoutsBySource: readMap(stored.layoutsBySource, readLayout),
+      selectedSourceId: isNonEmptyString(stored.selectedSourceId) ? stored.selectedSourceId : null,
+      showAirTemperature: typeof stored.showAirTemperature === "boolean" ? stored.showAirTemperature : defaults.showAirTemperature,
+      showPrecipitation: typeof stored.showPrecipitation === "boolean" ? stored.showPrecipitation : defaults.showPrecipitation,
+      showSunshine: typeof stored.showSunshine === "boolean" ? stored.showSunshine : defaults.showSunshine,
+      showEventLabels: typeof stored.showEventLabels === "boolean" ? stored.showEventLabels : defaults.showEventLabels,
+      bgColor: readString(stored.bgColor), chartBgColor: readString(stored.chartBgColor),
+      localEvents: readList(stored.localEvents, readEvent), textOverrides: readMap(stored.textOverrides, readString),
+      userTextPanels: readList(stored.userTextPanels, readTextPanel),
+      userChartPanels: readList(stored.userChartPanels, readChartPanel), savedPresets: readList(stored.savedPresets, readPreset),
+    };
+    return migrate(settings, stored.layout);
   } catch {
-    return { ...DEFAULT_SETTINGS };
+    return defaults;
   }
 }
 
@@ -161,18 +274,33 @@ export function saveSettings(email: string, settings: UserSettings): void {
   localStorage.setItem(storageKey(email), JSON.stringify(settings));
 }
 
+function isDateRange(value: unknown, now = Date.now()): value is DateRange {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const range = value as Record<string, unknown>;
+  if (typeof range.type !== "string"
+      || !["last24h", "last3d", "last7d", "last30d", "all", "custom"].includes(range.type)) return false;
+  if (range.type !== "custom") return true;
+  const { start, end } = range;
+  if ((start !== undefined && typeof start !== "string")
+      || (end !== undefined && typeof end !== "string")) return false;
+  const startMs = start ? new Date(start).getTime() : now - 7 * 24 * 60 * 60 * 1000;
+  const endMs = end ? new Date(end).getTime() : now;
+  return Number.isFinite(startMs) && Number.isFinite(endMs) && startMs <= endMs;
+}
+
 /** Compute the start timestamp (ms) for a given DateRange relative to now. */
 export function dateRangeToMs(range: DateRange): { start: number; end: number } | null {
   const now = Date.now();
-  switch (range.type) {
+  const safeRange: DateRange = isDateRange(range, now) ? range : { type: "last7d" };
+  switch (safeRange.type) {
     case "last24h": return { start: now - 24 * 60 * 60 * 1000, end: now };
     case "last3d": return { start: now - 3 * 24 * 60 * 60 * 1000, end: now };
     case "last7d": return { start: now - 7 * 24 * 60 * 60 * 1000, end: now };
     case "last30d": return { start: now - 30 * 24 * 60 * 60 * 1000, end: now };
     case "all": return null;
     case "custom": {
-      const s = range.start ? new Date(range.start).getTime() : now - 7 * 24 * 60 * 60 * 1000;
-      const e = range.end ? new Date(range.end).getTime() : now;
+      const s = safeRange.start ? new Date(safeRange.start).getTime() : now - 7 * 24 * 60 * 60 * 1000;
+      const e = safeRange.end ? new Date(safeRange.end).getTime() : now;
       return { start: s, end: e };
     }
     default: return null;

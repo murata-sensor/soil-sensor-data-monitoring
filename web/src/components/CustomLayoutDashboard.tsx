@@ -22,7 +22,7 @@ import type {
 } from "../layoutConfig";
 import { resolveDeviceFilter, resolveGaugeRanges } from "../layoutConfig";
 import { BatteryGauge } from "./BatteryGauge";
-import { parseTs, type PanelSettings, type DeviceColorMap } from "../settings";
+import { getOwnValue, parseTs, type PanelSettings, type DeviceColorMap } from "../settings";
 
 const SINGLE_SERIES_METRICS = new Set(["battery_v", "air_temp_c", "precip_1h_mm", "sunshine_1h_h"]);
 const MAX_CONNECTED_GAP_MS = 3 * 60 * 60 * 1000;
@@ -169,7 +169,7 @@ export function CustomLayoutDashboard({
                 events={events}
                 surface={surface}
                 textColor={textColor}
-                panelSettings={panelSettings?.[panel.id]}
+                panelSettings={getOwnValue(panelSettings, panel.id)}
                 deviceColors={deviceColors ?? {}}
                 devices={layout.devices}
                 deviceLabels={layout.deviceLabels ?? layout.devices}
@@ -229,7 +229,7 @@ function PanelRenderer({
           panel={panel}
           textColor={textColor}
           deviceLabels={deviceLabels}
-          overrideContent={textOverrides?.[panel.id]}
+          overrideContent={getOwnValue(textOverrides, panel.id)}
           onEdit={readOnly ? undefined : onTextEdit}
           onRemove={readOnly ? undefined : onRemoveTextPanel}
           readOnly={readOnly}
@@ -697,15 +697,12 @@ function buildChartDatasets(
       let color: string;
       if (singleSeries && fallbackSingleColor) {
         color = fallbackSingleColor;
-      } else if (panel.groupColors?.[key]) {
-        color = panel.groupColors[key];
-      } else if (deviceColors[key]) {
-        color = deviceColors[key];
       } else {
-        color = DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length];
+        color = getOwnValue(panel.groupColors, key) || getOwnValue(deviceColors, key)
+          || DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length];
       }
       // Determine label
-      const label = singleSeries ? panel.title : (panel.groupLabels?.[key] ?? key);
+      const label = singleSeries ? panel.title : (getOwnValue(panel.groupLabels, key) ?? key);
       groups.set(key, { color, label, data: [] });
       colorIdx++;
     }

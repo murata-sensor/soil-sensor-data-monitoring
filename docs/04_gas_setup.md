@@ -219,39 +219,70 @@ python examples/continuous_log.py --product SLT5009 --port COM3 --address 1,2 `
 
 ---
 
-## B. Registry 用 GAS（admin_api + 任意で read_proxy）
+## B. Registry 用 GAS（admin_api と read_proxy は別プロジェクト）
 
-Registry スプレッドシート 1 つに対して、この設定を 1 回行います。
+両ファイルはそれぞれ `doPost` を定義するため、**同じ GAS プロジェクトに置かないでください**。
+同じコードに異なるデプロイ名を付けても API は分離されません。
 
 ### B-1. ファイルを配置
 
-0-1 〜 0-2 の手順で **Registry スプレッドシート** に紐付け、以下を貼る:
+1. `script.google.com` で管理 API 用と閲覧 API 用のスタンドアロンプロジェクトを別々に作る。
+2. 管理 API 用には `gas/admin_api.gs` だけを配置する。
+3. 閲覧 API 用には `gas/read_proxy.gs` だけを配置する。
+4. それぞれに、次の Script Properties を登録する。
 
-- `gas/admin_api.gs`（必須）
-- `gas/read_proxy.gs`（`accessMode=proxy` のソースを使うときのみ）
+既存のスプレッドシートにバインドされた単独 API は、`REGISTRY_SPREADSHEET_ID` を省略して継続利用できます。
+
+#### 既存プロジェクトに両方の API が入っている場合
+
+既存プロジェクトを閲覧 Proxy 用として使い、管理 API 用のプロジェクトを1つ追加する方法で分離できます。
+同じ Registry を使うため、分離のために新しいスプレッドシートを作る必要はありません。
+
+まず既存コードと公開版番号を控え、新しい管理 API 用プロジェクトにローカルの更新済み `gas/admin_api.gs` だけを配置します。
+次節の3項目を設定して WebApp を配備し、`/exec` URL を控えます。この段階では既存の公開版・設定・接続先を変更しません。
+
+その後、設定編集を止めて切り替えます。既存プロジェクトの API を更新済み `gas/read_proxy.gs` だけに整理し、
+必要な Script Properties を確認して公開版を更新します。トリガーや別用途の処理が入っている場合は、削除・保存前に影響を確認してください。
+GitHub Variables の管理 URL を新しい管理 API の URL にし、閲覧 URL も対応する Proxy の URL と照合して、Pages を更新します。
+旧管理画面と新管理 API では保存方法が異なるため、GAS と画面の切り替え中は管理操作を再開しないでください。
 
 ### B-2. スクリプトプロパティ
 
 | キー | 値 | 用途 |
 | --- | --- | --- |
-| `ADMIN_ALLOWED_EMAILS` | `you@example.com,prof@example.com` | admin 画面の書き込みを許可するメール一覧（カンマ区切り） |
-| `GOOGLE_OAUTH_CLIENT_ID` | `01_google_setup.md` 手順 4-2 のフロントと同じ Client ID | ID トークン検証用 |
+| `REGISTRY_SPREADSHEET_ID` | Registry スプレッドシートの ID | スタンドアロンの両 API で必須。実際の ID は公開リポジトリに保存しない |
+| `ADMIN_ALLOWED_EMAILS` | `you@example.com,prof@example.com` | 管理 API だけに登録。対象者は `users` でも `role=admin`・`enabled=TRUE` が必要 |
+| `GOOGLE_OAUTH_CLIENT_ID` | `01_google_setup.md` 手順 4-2 のフロントと同じ Client ID | 両 API で必須。未設定・異なる audience・期限切れ・未確認メールは拒否 |
 
 ### B-3. admin_api を WebApp デプロイ
 
 0-4 の手順でデプロイ → URL を **GitHub Variables の `VITE_GAS_ADMIN_URL`** に登録（[`03_pages_deploy.md`](03_pages_deploy.md) 手順 1）。
 
-### B-4. （任意）read_proxy を WebApp デプロイ
+### B-4. read_proxy を WebApp デプロイ（推奨）
 
-`accessMode=proxy` のデータソースを 1 つでも使う場合のみ実施。
+一般閲覧者への設定・位置情報の過剰公開を防ぐため、閲覧 Proxy を設定してください。
+Mechatrax のデータ取得には Proxy が必須です。
 
-1. 同じ Registry GAS プロジェクトでもう一度「デプロイ → 新しいデプロイ」
-2. 「ウェブアプリ」を選び、**説明** に `read-proxy` のように区別が付く名前を入れる
+1. **閲覧 API 専用プロジェクト**で「デプロイ → 新しいデプロイ」
+2. 「ウェブアプリ」を選び、実行を「自分」、アクセスを「全員」にする
 3. デプロイ → URL を **GitHub Variables の `VITE_GAS_PROXY_URL`** に登録
 
 > `read_proxy.gs` を実行するアカウント（あなた、または GAS オーナー）に、
 > 対象データ用スプレッドシートが **Drive 上で「閲覧者」共有されている** 必要があります。
 > 案件主に「`<GAS オーナーのメール>` だけに閲覧者共有してください」と依頼すれば OK。
+
+更新時は「デプロイを管理 → 編集 → 新しいバージョン」で反映してください。
+URL を変更した場合は GitHub Variables の変更と Pages の再ビルドも必要です。
+古い脆弱な API デプロイはアーカイブしてください。保存しただけでは既存 `/exec` に反映されません。
+
+Proxy は表示用列だけを返し、通常タブと `events` のみを許可します。
+FTP では `sensor_raw`・`sensor_9am` も許可します。追加・年度別タブは `sources` に
+任意列 `allowedSheetNames` を追加して、JSON 配列（例: `["sensor_2025"]`）で明示してください。
+他ソースの主タブとして登録されたタブには、そのソースの ACL も適用されます。
+
+**既存の Drive 共有はコード更新だけでは取り消せません。** Registry と実データの直接共有・
+リンク共有・グループ共有を見直し、一般閲覧者が Google Sheets 側から生データを取得できない状態にしてください。
+管理者と各 GAS 実行アカウントに必要な共有は維持します。
 
 ---
 

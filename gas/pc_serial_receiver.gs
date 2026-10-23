@@ -77,16 +77,26 @@ function doPost(e) {
     }
 
     const sheetName = props.getProperty('PC_SERIAL_TARGET_SHEET') || 'soil_sensor';
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sh = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
-    if (sh.getLastRow() === 0) sh.appendRow(PC_SERIAL_HEADER);
-    // One setValues call keeps a multi-sensor batch to a single write.
-    sh.getRange(sh.getLastRow() + 1, 1, values.length, PC_SERIAL_HEADER.length)
-      .setValues(values);
-    _pcSerialExtendFilter(sh);
-    return _pcSerialJson({ ok: true, written: values.length });
-  } catch (err) {
-    return _pcSerialJson({ ok: false, error: String(err) });
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return _pcSerialJson({ ok: false, error: 'busy' });
+    try {
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const sh = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
+      if (sh.getLastRow() === 0) sh.appendRow(PC_SERIAL_HEADER);
+      // One setValues call keeps a multi-sensor batch to a single write.
+      sh.getRange(sh.getLastRow() + 1, 1, values.length, PC_SERIAL_HEADER.length)
+        .setValues(values.map((row) => row.map(_pcSerialLiteralCell)));
+      _pcSerialExtendFilter(sh);
+      return _pcSerialJson({ ok: true, written: values.length });
+    } finally {
+      try {
+        SpreadsheetApp.flush();
+      } finally {
+        lock.releaseLock();
+      }
+    }
+  } catch {
+    return _pcSerialJson({ ok: false, error: 'request_failed' });
   }
 }
 
@@ -106,10 +116,14 @@ function _pcSerialExtendFilter(sh) {
   fullRange.createFilter();
 }
 
+function _pcSerialLiteralCell(value) {
+  return typeof value === 'string' && /^\s*[=+@-]/.test(value) ? "'" + value : value;
+}
+
 function _pcSerialNum(v) {
   if (v === undefined || v === null || v === '') return '';
   const n = Number(v);
-  return isNaN(n) ? '' : n;
+  return Number.isFinite(n) ? n : '';
 }
 
 function _pcSerialJson(obj) {

@@ -65,14 +65,24 @@ function doPost(e) {
     ];
 
     const sheetName = props.getProperty('M5_TARGET_SHEET') || 'soil_sensor';
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sh = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
-    if (sh.getLastRow() === 0) sh.appendRow(M5_HEADER);
-    sh.appendRow(row);
-    _extendFilter(sh);
-    return _m5Json({ ok: true });
-  } catch (err) {
-    return _m5Json({ ok: false, error: String(err) });
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return _m5Json({ ok: false, error: 'busy' });
+    try {
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const sh = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
+      if (sh.getLastRow() === 0) sh.appendRow(M5_HEADER);
+      sh.appendRow(row.map(_m5LiteralCell));
+      _extendFilter(sh);
+      return _m5Json({ ok: true });
+    } finally {
+      try {
+        SpreadsheetApp.flush();
+      } finally {
+        lock.releaseLock();
+      }
+    }
+  } catch {
+    return _m5Json({ ok: false, error: 'request_failed' });
   }
 }
 
@@ -92,10 +102,14 @@ function _extendFilter(sh) {
   fullRange.createFilter();
 }
 
+function _m5LiteralCell(value) {
+  return typeof value === 'string' && /^\s*[=+@-]/.test(value) ? "'" + value : value;
+}
+
 function _num(v) {
   if (v === undefined || v === null || v === '') return '';
   const n = Number(v);
-  return isNaN(n) ? '' : n;
+  return Number.isFinite(n) ? n : '';
 }
 
 function _m5Json(obj) {

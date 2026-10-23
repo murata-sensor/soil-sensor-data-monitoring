@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Line } from "react-chartjs-2";
 import {
   CategoryScale, Chart as ChartJS, Filler, Legend, LinearScale, LineElement,
@@ -26,12 +26,13 @@ import { ConsentRequiredError, requestConsentToken, signOut } from "../auth/goog
 import {
   type DateRangeType, type DeviceColorMap, type LayoutPreset,
   type PanelSettings, type UserChartPanel, type UserSettings,
-  dateRangeToMs, loadSettings, parseTs, saveSettings, withSourceLayout,
+  dateRangeToMs, getOwnValue, loadSettings, parseTs, saveSettings, withSourceLayout,
 } from "../settings";
 import type { LayoutConfig, TextPanelConfig } from "../layoutConfig";
 import { generateDeviceColumnLayout, selectLayoutForYear } from "../layoutConfig";
 import { CustomLayoutDashboard } from "./CustomLayoutDashboard";
 import type { Metric } from "../types";
+import { toCsv } from "../csv";
 
 ChartJS.register(
   CategoryScale, LinearScale, LineElement, PointElement, TimeScale,
@@ -77,17 +78,7 @@ type SettingsPanelInfo = Pick<ThemePanel, "id" | "title" | "metric"> & {
 
 function downloadCsv(filename: string, rows: NormalizedRow[]) {
   if (!rows.length) return;
-  const headers = Array.from(new Set<string>(
-    rows.flatMap((r) => Object.keys(r)),
-  ));
-  const lines = [headers.join(",")];
-  for (const r of rows) {
-    lines.push(headers.map((h) => {
-      const v = (r as Record<string, unknown>)[h];
-      return v === undefined || v === null ? "" : String(v);
-    }).join(","));
-  }
-  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const blob = new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url; a.download = filename; a.click();
@@ -115,6 +106,8 @@ export default function Dashboard() {
   const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [customLayoutResetKey, setCustomLayoutResetKey] = useState(0);
   const [viewMode, setViewMode] = useState<"edit" | "view">("edit");
+  const registryRequest = useRef(0);
+  const registryRetry = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isViewMode = viewMode === "view";
 
   const updateSettings = useCallback((patch: Partial<UserSettings>) => {
@@ -138,13 +131,31 @@ export default function Dashboard() {
 
   const ftpSheetName = settings?.ftpSheetName ?? "sensor_raw";
 
+  useEffect(() => {
+    setAllowed([]);
+    setLayouts([]);
+    setRows(null);
+    setEvents([]);
+    setReplacements([]);
+    setSheetNames([]);
+    setIsAdmin(false);
+    setUnregistered(false);
+    setAccessDenied(false);
+    setError(null);
+  }, [user?.email]);
+
   const loadRegistry = async () => {
     if (!user) return;
+    const request = ++registryRequest.current;
+    const isCurrent = () => registryRequest.current === request && useApp.getState().user === user;
+    if (registryRetry.current !== null) clearTimeout(registryRetry.current);
+    registryRetry.current = null;
     setRegistryLoading(true);
     setNeedsConsent(false); setError(null);
     try {
       const { sources: src, users, acl, theme: t, layouts: lays } =
         await loadAllRegistry(user.idToken);
+      if (!isCurrent()) return;
       setSources(src); setLayouts(lays);
       if (t) setTheme(t);
       const me = users.find((u) => u.email.toLowerCase() === user.email.toLowerCase());
@@ -153,12 +164,11 @@ export default function Dashboard() {
       const candidates = resolveAllowedSources(user.email, src, users, acl);
       const accessResults = await Promise.all(
         candidates.map(async (source) => {
-          const accessible = await canAccessSource(source, user.idToken, {
-            sheetNameOverride: source.schemaType === "remote-ftp" ? ftpSheetName : undefined,
-          });
+          const accessible = await canAccessSource(source, user.idToken);
           return { source, accessible };
         }),
       );
+      if (!isCurrent()) return;
       const list = accessResults
         .filter((r) => r.accessible)
         .map((r) => r.source);
@@ -173,6 +183,7 @@ export default function Dashboard() {
         setSelectedSource(savedSourceId);
       }
     } catch (e) {
+      if (!isCurrent()) return;
       if (e instanceof ConsentRequiredError) {
         setNeedsConsent(true);
       } else if (e instanceof RegistryAccessDeniedError) {
@@ -184,21 +195,32 @@ export default function Dashboard() {
         setError(msg);
         // Auto-retry for transient errors (429 rate limit)
         if (msg.includes("429")) {
-          setTimeout(() => { setError(null); loadRegistry(); }, 5000);
+          registryRetry.current = setTimeout(() => {
+            registryRetry.current = null;
+            if (isCurrent()) { setError(null); void loadRegistry(); }
+          }, 5000);
         }
       }
     } finally {
-      setRegistryLoading(false);
+      if (isCurrent()) setRegistryLoading(false);
     }
   };
 
-  useEffect(() => { loadRegistry(); }, [user, setTheme, setSelectedSource, selectedSourceId, ftpSheetName]);
+  useEffect(() => {
+    void loadRegistry();
+    return () => {
+      registryRequest.current += 1;
+      if (registryRetry.current !== null) clearTimeout(registryRetry.current);
+      registryRetry.current = null;
+    };
+  }, [user, setTheme, setSelectedSource, selectedSourceId, ftpSheetName]);
 
   useEffect(() => {
     if (!user || !selectedSourceId) {
       setRows(null);
       setEvents([]);
       setReplacements([]);
+      setLoading(false);
       return;
     }
     const src = allowed.find((s) => s.sourceId === selectedSourceId);
@@ -206,8 +228,12 @@ export default function Dashboard() {
       setRows(null);
       setEvents([]);
       setReplacements([]);
+      setLoading(false);
       return;
     }
+    let active = true;
+    const isCurrent = () => active && useApp.getState().user === user
+      && useApp.getState().selectedSourceId === selectedSourceId;
     setLoading(true); setError(null);
     setRows(null);
     Promise.all([
@@ -217,6 +243,7 @@ export default function Dashboard() {
       loadSourceEvents(src, user.idToken),
     ])
       .then(([r, ev]) => {
+        if (!isCurrent()) return;
         setRows(applyDeviceReplacements(r.rows, ev.replacements, src.tz));
         setEvents(ev.events.map((event) => event.deviceId && event.deviceId !== "*"
           ? { ...event, deviceId: applyDeviceReplacements(
@@ -226,12 +253,14 @@ export default function Dashboard() {
         setReplacements(ev.replacements);
       })
       .catch((e) => {
+        if (!isCurrent()) return;
         setRows([]);
         setEvents([]);
         setReplacements([]);
         setError(String(e));
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (isCurrent()) setLoading(false); });
+    return () => { active = false; };
   }, [user, allowed, selectedSourceId, ftpSheetName]);
 
   const selected = useMemo(
@@ -241,20 +270,33 @@ export default function Dashboard() {
 
   // Fetch sheet tab names when selected source changes
   useEffect(() => {
-    if (!selected || selected.schemaType !== "remote-ftp") {
+    if (!user || !selected || selected.schemaType !== "remote-ftp") {
       setSheetNames([]);
       return;
     }
-    getSheetNames(selected.spreadsheetId)
-      .then((names) => setSheetNames(names))
-      .catch(() => setSheetNames([]));
-  }, [selected]);
+    let active = true;
+    const isCurrent = () => active && useApp.getState().user === user
+      && useApp.getState().selectedSourceId === selected.sourceId;
+    getSheetNames(selected, user?.idToken)
+      .then((names) => {
+        if (!isCurrent()) return;
+        setSheetNames(names);
+        const fallback = names.includes("sensor_raw") ? "sensor_raw"
+          : names.includes(selected.sheetName) ? selected.sheetName : names[0];
+        if (fallback && !names.includes(ftpSheetName)) {
+          setYearOverride(null);
+          updateSettings({ ftpSheetName: fallback });
+        }
+      })
+      .catch(() => { if (isCurrent()) setSheetNames([]); });
+    return () => { active = false; };
+  }, [selected, user?.idToken, ftpSheetName]);
 
   const panels = useMemo<ThemePanel[]>(() => {
     if (!selected) return theme.panels;
     // For m5stack/mechatrax, use substrate-aware panel generation
     if (selected.schemaType === "m5stack" || selected.schemaType === "mechatrax") {
-      const substrate: SubstrateType = settings?.substrateTypes[selected.sourceId] ?? "soil";
+      const substrate: SubstrateType = getOwnValue(settings?.substrateTypes, selected.sourceId) ?? "soil";
       return getPanelsForSubstrate(selected.schemaType, substrate);
     }
     return [...theme.panels, ...(SCHEMA_EXTRA_PANELS[selected.schemaType] || [])];
@@ -464,7 +506,7 @@ export default function Dashboard() {
   // Merge saved layout with defaults: only keep items that match current panels,
   // and fill in missing panels from their default positions.
   const currentLayout: LayoutItem[] = useMemo(() => {
-    const saved = selectedSourceId ? settings?.layoutsBySource?.[selectedSourceId] : undefined;
+    const saved = selectedSourceId ? getOwnValue(settings?.layoutsBySource, selectedSourceId) : undefined;
     if (!saved) return defaultLayout;
     const savedMap = new Map(saved.map((l) => [l.i, l]));
     return visiblePanels.map((p) => {
@@ -529,7 +571,7 @@ export default function Dashboard() {
       id: crypto.randomUUID(),
       name,
       createdAt: new Date().toISOString(),
-      layout: selectedSourceId ? settings.layoutsBySource[selectedSourceId] ?? null : null,
+      layout: selectedSourceId ? getOwnValue(settings.layoutsBySource, selectedSourceId) ?? null : null,
       sourceId: selectedSourceId,
       ftpSheetName: settings.ftpSheetName,
       substrateTypes: { ...settings.substrateTypes },
@@ -621,11 +663,11 @@ export default function Dashboard() {
     <div className={`min-h-screen ${isViewMode ? "view-mode" : ""}`} style={{ background: settings?.bgColor || theme.bg, color: theme.text }}>
       <header className={`px-4 sm:px-6 py-3 sm:py-4 border-b ${isViewMode ? "print:hidden" : ""}`}
         style={{ background: theme.surface }}>
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+        <div className="grid grid-cols-1 items-center gap-3 xl:grid-cols-[1fr_auto_1fr] xl:gap-2">
           {/* 左: タイトル */}
           <div className="text-base sm:text-lg font-semibold">Soil Sensor Monitor</div>
           {/* 中央: データソース・表示期間・CSV */}
-          <div className="flex items-center gap-2 flex-wrap justify-center">
+          <div className="flex min-w-0 items-center gap-2 flex-wrap justify-start xl:justify-center">
             <div className="flex items-center gap-2 min-w-0">
               <label className="text-slate-600 shrink-0 text-xs sm:text-sm">データソース：</label>
               <select
@@ -664,7 +706,7 @@ export default function Dashboard() {
               <div className="flex items-center gap-1 min-w-0">
                 <label className="text-slate-600 shrink-0 text-xs sm:text-sm">培地：</label>
                 <select
-                  value={settings?.substrateTypes[selected.sourceId] ?? "soil"}
+                  value={getOwnValue(settings?.substrateTypes, selected.sourceId) ?? "soil"}
                   onChange={(e) => {
                     const val = e.target.value as SubstrateType;
                     updateSettings({
@@ -750,7 +792,7 @@ export default function Dashboard() {
             </div>
           </div>
           {/* 右: モード切替・設定・管理・ログアウト */}
-          <div className="flex gap-1 sm:gap-2 items-center justify-end">
+          <div className="flex flex-wrap gap-1 sm:gap-2 items-center justify-start xl:justify-end">
             <button
               onClick={() => setViewMode(viewMode === "edit" ? "view" : "edit")}
               className={`px-2 sm:px-3 py-1 rounded text-xs sm:text-sm ${
@@ -961,7 +1003,7 @@ function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, se
                     rows={filteredRows}
                     events={visibleEvents}
                     colors={colors}
-                    panelSettings={settings?.panelSettings[p.id]}
+                    panelSettings={getOwnValue(settings?.panelSettings, p.id)}
                     deviceColors={settings?.deviceColors || {}}
                     showEventLabels={showEventLabels}
                     chartBgColor={chartBgColor}
@@ -974,7 +1016,7 @@ function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, se
                   rows={filteredRows}
                   events={visibleEvents}
                   colors={colors}
-                  panelSettings={settings?.panelSettings[p.id]}
+                  panelSettings={getOwnValue(settings?.panelSettings, p.id)}
                   deviceColors={settings?.deviceColors || {}}
                   showEventLabels={showEventLabels}
                   chartBgColor={chartBgColor}
@@ -987,7 +1029,7 @@ function GridContainer({ layout, panels, filteredRows, visibleEvents, colors, se
             <div key={tp.id}>
               <NormalTextPanel
                 panel={tp}
-                overrideContent={textOverrides[tp.id]}
+                overrideContent={getOwnValue(textOverrides, tp.id)}
                 onEdit={onTextEdit}
                 onRemove={onRemoveUserPanel}
                 chartBgColor={chartBgColor}
@@ -1165,7 +1207,7 @@ function buildDatasets(
     if (!Number.isFinite(x)) continue;
     const key = r.deviceId || "(default)";
     if (!groups.has(key)) {
-      const color = deviceColors[key] || colors[i % colors.length];
+      const color = getOwnValue(deviceColors, key) || colors[i % colors.length];
       groups.set(key, { color, label: key, data: [] });
       i++;
     }
@@ -1201,7 +1243,7 @@ function buildMultiMetricDatasets(
       if (!groups.has(key)) {
         const metricLabel = METRIC_LABELS[metric] || metric;
         const label = `${deviceId} - ${metricLabel}`;
-        const color = deviceColors[deviceId] || colors[colorIdx % colors.length];
+        const color = getOwnValue(deviceColors, deviceId) || colors[colorIdx % colors.length];
         groups.set(key, { color, label, data: [] });
         colorIdx++;
       }
@@ -1491,18 +1533,15 @@ function SettingsModal({ settings, panels, rows, schemaType, onSave, onClose, on
     patch: { yMin?: number; yMax?: number; updateMin?: boolean; updateMax?: boolean },
   ) => {
     setPanelSettings((prev) => {
-      const next = { ...prev };
-      for (const p of panels) {
-        if (p.metric === metric) {
-          const current = next[p.id] || {};
-          next[p.id] = {
-            ...current,
-            ...(patch.updateMin ? { yMin: patch.yMin } : {}),
-            ...(patch.updateMax ? { yMax: patch.yMax } : {}),
-          };
-        }
-      }
-      return next;
+      const updates = panels.filter((p) => p.metric === metric).map((p) => [
+        p.id,
+        {
+          ...getOwnValue(prev, p.id),
+          ...(patch.updateMin ? { yMin: patch.yMin } : {}),
+          ...(patch.updateMax ? { yMax: patch.yMax } : {}),
+        },
+      ]);
+      return { ...prev, ...Object.fromEntries(updates) };
     });
   };
 
@@ -1543,9 +1582,9 @@ function SettingsModal({ settings, panels, rows, schemaType, onSave, onClose, on
                   className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
                   onClick={() => {
                     // Find first panel of this metric with settings and apply to all
-                    const first = panels.find((p) => p.metric === metric && panelSettings[p.id]);
+                    const first = panels.find((p) => p.metric === metric && getOwnValue(panelSettings, p.id));
                     if (first) {
-                      const ps = panelSettings[first.id];
+                      const ps = getOwnValue(panelSettings, first.id);
                       applyBatchYAxis(metric, {
                         yMin: ps?.yMin,
                         yMax: ps?.yMax,
@@ -1573,10 +1612,10 @@ function SettingsModal({ settings, panels, rows, schemaType, onSave, onClose, on
                 </div>
                 <div className="space-y-2">
                   {group.panels.map((p) => {
-                    const ps = panelSettings[p.id] || {};
+                    const ps = getOwnValue(panelSettings, p.id) || {};
                     const update = (patch: Partial<PanelSettings>) => {
                       setPanelSettings((prev) => {
-                        const current = prev[p.id] || {};
+                        const current = getOwnValue(prev, p.id) || {};
                         return { ...prev, [p.id]: { ...current, ...patch } };
                       });
                     };
@@ -1620,9 +1659,9 @@ function SettingsModal({ settings, panels, rows, schemaType, onSave, onClose, on
               <div key={id} className="flex items-center gap-2 text-xs">
                 <span className="font-mono w-16">{id}</span>
                 <input type="color" className="w-8 h-6 border rounded cursor-pointer"
-                  value={deviceColors[id] || DEFAULT_PALETTE[idx % DEFAULT_PALETTE.length]}
+                  value={getOwnValue(deviceColors, id) || DEFAULT_PALETTE[idx % DEFAULT_PALETTE.length]}
                   onChange={(e) => setDeviceColors((prev) => ({ ...prev, [id]: e.target.value }))} />
-                {deviceColors[id] && (
+                {getOwnValue(deviceColors, id) && (
                   <button className="text-slate-400 hover:text-red-500"
                     onClick={() => setDeviceColors((prev) => {
                       const next = { ...prev }; delete next[id]; return next;

@@ -1,6 +1,11 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../tailwind.config.js";
+
+@layer base {
+  *, ::before, ::after, ::backdrop, ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+}
 
 :root { color-scheme: light; }
 body {
@@ -19,7 +24,7 @@ body {
 
 /* Print styles */
 @media print {
-  header, .print\\:hidden {
+  header, .print\:hidden {
     display: none !important;
   }
   body, .min-h-screen {

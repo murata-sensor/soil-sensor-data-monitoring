@@ -7,14 +7,15 @@
  * - `loadSourceEvents(source)` reads events from the data-source spreadsheet's `events` tab.
  */
 
-import { getAccessToken } from "../auth/google";
-import { toNormalized, type NormalizedRow } from "../adapters";
+import { getAccessToken, getValidIdToken } from "../auth/google";
+import { isSchemaType, toNormalized, type NormalizedRow } from "../adapters";
 import type { DeviceReplacement } from "../deviceReplacements";
 import { parseTs } from "../settings";
 import type {
   AclRow, EventRow, SourceRow, Theme, UserRow,
 } from "../types";
 import type { LayoutConfig } from "../layoutConfig";
+import { parseLayoutConfig, parseThemeConfig } from "../configValidation";
 
 const REGISTRY_ID = import.meta.env.VITE_REGISTRY_SPREADSHEET_ID;
 const PROXY_URL = import.meta.env.VITE_GAS_PROXY_URL;
@@ -91,29 +92,21 @@ export interface RegistryData {
 }
 
 /**
- * Load all registry data. Tries direct Sheets API first; on 403 falls back
- * to the GAS proxy (action=registry) so users without direct spreadsheet
- * access can still use the app.
+ * Use the server-filtered registry whenever a proxy is configured.
  */
 export async function loadAllRegistry(idToken: string): Promise<RegistryData> {
-  try {
-    const [src, users, acl, t, lays] = await Promise.all([
-      loadSources(), loadUsers(), loadAcl(), loadTheme(), loadLayouts(),
-    ]);
-    return { sources: src, users, acl, theme: t, layouts: lays };
-  } catch (e) {
-    if (e instanceof RegistryAccessDeniedError && PROXY_URL) {
-      return loadRegistryViaProxy(idToken);
-    }
-    throw e;
-  }
+  if (PROXY_URL) return loadRegistryViaProxy(idToken);
+  const [src, users, acl, t, lays] = await Promise.all([
+    loadSources(), loadUsers(), loadAcl(), loadTheme(), loadLayouts(),
+  ]);
+  return { sources: src, users, acl, theme: t, layouts: lays };
 }
 
 async function loadRegistryViaProxy(idToken: string): Promise<RegistryData> {
   if (!PROXY_URL) throw new Error("VITE_GAS_PROXY_URL is not set");
   const res = await fetch(PROXY_URL, {
     method: "POST",
-    body: JSON.stringify({ idToken, action: "registry" }),
+    body: JSON.stringify({ idToken: await getValidIdToken(idToken), action: "registry" }),
   });
   if (!res.ok) throw new Error(`proxy ${res.status}`);
   const json = (await res.json()) as {
@@ -166,19 +159,28 @@ export async function loadSources(): Promise<SourceRow[]> {
 }
 
 function parseSources(raw: Record<string, string>[]): SourceRow[] {
-  return raw.map((r) => ({
-    sourceId: (r.sourceId || "").trim(),
-    displayName: (r.displayName || r.sourceId || "").trim(),
-    schemaType: (r.schemaType || "").trim() as SourceRow["schemaType"],
-    spreadsheetId: (r.spreadsheetId || "").trim(),
-    sheetName: (r.sheetName || "Sheet1").trim(),
-    headerRow: Number(r.headerRow) || 1,
-    siteId: (r.siteId || "").trim(),
-    tz: (r.tz || "Asia/Tokyo").trim(),
-    accessMode: ((r.accessMode || "direct").trim().toLowerCase() as SourceRow["accessMode"]),
-    enabled: parseBool(r.enabled),
-    notes: r.notes || undefined,
-  })).filter((s) => s.sourceId && s.spreadsheetId && s.schemaType);
+  return raw.flatMap<SourceRow>((r) => {
+    const sourceId = (r.sourceId || "").trim();
+    const spreadsheetId = (r.spreadsheetId || "").trim();
+    const schemaType = (r.schemaType || "").trim();
+    const accessMode = (r.accessMode || "").trim().toLowerCase() || "direct";
+    const headerRow = r.headerRow?.trim() ? Number(r.headerRow) : 1;
+    const tz = (r.tz || "").trim() || "Asia/Tokyo";
+    if (!sourceId || !spreadsheetId || !isSchemaType(schemaType)
+      || (accessMode !== "direct" && accessMode !== "proxy")
+      || !Number.isSafeInteger(headerRow) || headerRow < 1) return [];
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: tz });
+    } catch {
+      return [];
+    }
+    return [{
+      sourceId, displayName: (r.displayName || r.sourceId || "").trim(), schemaType,
+      spreadsheetId, sheetName: (r.sheetName || "Sheet1").trim(), headerRow,
+      siteId: (r.siteId || "").trim(), tz, accessMode,
+      enabled: parseBool(r.enabled), notes: r.notes || undefined,
+    }];
+  });
 }
 
 export async function loadAcl(): Promise<AclRow[]> {
@@ -226,7 +228,7 @@ export async function loadSourceEvents(
   idToken?: string,
 ): Promise<{ events: EventRow[]; replacements: DeviceReplacement[] }> {
   try {
-    const values = source.accessMode === "proxy"
+    const values = PROXY_URL || source.accessMode === "proxy"
       ? await readProxy(source, idToken || "", "events")
       : await sheetsGet(source.spreadsheetId, "events!A1:Z");
     return parseSourceEvents(values);
@@ -245,7 +247,7 @@ function parseTheme(rows: string[][]): Theme | null {
   if (rows.length < 2) return null;
   const json = rows[1]?.[1];
   if (!json) return null;
-  try { return JSON.parse(json) as Theme; } catch { return null; }
+  try { return parseThemeConfig(JSON.parse(json)); } catch { return null; }
 }
 
 export async function loadLayouts(): Promise<LayoutConfig[]> {
@@ -265,8 +267,8 @@ export function parseLayouts(rows: string[][]): LayoutConfig[] {
     const [, json, year] = rows[i];
     if (!json) continue;
     try {
-      const cfg = JSON.parse(json) as LayoutConfig;
-      if (cfg.sourceId && (!year || /^\d{4}$/.test(year.trim()))) {
+      const cfg = parseLayoutConfig(JSON.parse(json));
+      if (cfg && (!year || /^\d{4}$/.test(year.trim()))) {
         configs.push({ ...cfg, year: year?.trim() ? Number(year.trim()) : undefined });
       }
     } catch { /* skip malformed */ }
@@ -285,10 +287,21 @@ export interface DataSourceResult {
  * Fetch the list of sheet tab names for a spreadsheet.
  * Filters out tabs whose name starts with "_".
  */
-export async function getSheetNames(spreadsheetId: string): Promise<string[]> {
+export async function getSheetNames(source: SourceRow, idToken?: string): Promise<string[]> {
+  if (PROXY_URL || source.accessMode === "proxy") {
+    if (!PROXY_URL) throw new Error("VITE_GAS_PROXY_URL is not set for proxy access");
+    const response = await fetch(PROXY_URL, {
+      method: "POST",
+      body: JSON.stringify({ idToken: await getValidIdToken(idToken || ""), action: "sheetNames", sourceId: source.sourceId }),
+    });
+    if (!response.ok) throw new Error(`proxy ${response.status}`);
+    const result = await response.json() as { ok: boolean; names?: string[]; error?: string };
+    if (!result.ok) throw new Error(result.error || "proxy denied");
+    return result.names ?? [];
+  }
   const token = await getAccessToken();
   const url =
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}` +
+    `https://sheets.googleapis.com/v4/spreadsheets/${source.spreadsheetId}` +
     `?fields=sheets.properties.title`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error(`Sheets API ${res.status} fetching sheet names`);
@@ -313,7 +326,7 @@ export async function canAccessSource(
   try {
     const sheetName = (options?.sheetNameOverride || source.sheetName).trim();
     const headerRow = Math.max(1, Number(source.headerRow) || 1);
-    if (source.accessMode === "proxy") {
+    if (PROXY_URL || source.accessMode === "proxy" || source.schemaType === "mechatrax") {
       await readProxy(source, idToken || "", sheetName);
       return true;
     }
@@ -336,7 +349,7 @@ async function readProxy(src: SourceRow, idToken: string, sheetNameOverride?: st
   if (!PROXY_URL) throw new Error("VITE_GAS_PROXY_URL is not set for proxy access");
   const res = await fetch(PROXY_URL, {
     method: "POST",
-    body: JSON.stringify({ idToken, sourceId: src.sourceId, sheetName: sheetNameOverride || undefined }),
+    body: JSON.stringify({ idToken: await getValidIdToken(idToken), sourceId: src.sourceId, sheetName: sheetNameOverride || undefined }),
   });
   if (!res.ok) throw new Error(`proxy ${res.status}`);
   const json = (await res.json()) as { ok: boolean; error?: string; values?: string[][] };
@@ -349,7 +362,7 @@ export async function loadDataSource(
   idToken?: string,
   options?: { sheetNameOverride?: string },
 ): Promise<DataSourceResult> {
-  const values = source.accessMode === "proxy"
+  const values = PROXY_URL || source.accessMode === "proxy" || source.schemaType === "mechatrax"
     ? await readProxy(source, idToken || "", options?.sheetNameOverride)
     : await readDirect(source, options?.sheetNameOverride);
   return { source, rows: toNormalized(source.schemaType, values) };

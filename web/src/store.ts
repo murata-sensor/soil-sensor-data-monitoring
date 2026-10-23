@@ -15,7 +15,11 @@ export const useApp = create<State>((set) => ({
   user: null,
   theme: DEFAULT_THEME,
   selectedSourceId: null,
-  setUser: (user) => set({ user }),
+  setUser: (user) => set((state) => {
+    const sameAccount = !!user && !!state.user
+      && user.email.trim().toLowerCase() === state.user.email.trim().toLowerCase();
+    return sameAccount ? { user } : { user, theme: DEFAULT_THEME, selectedSourceId: null };
+  }),
   setTheme: (theme) => set({ theme }),
   setSelectedSource: (s) =>
     set({ selectedSourceId: s === null ? null : typeof s === "string" ? s : s.sourceId }),

@@ -307,7 +307,7 @@ SPA は **このレジストリのみ ID を環境変数で持つ**。実デー�
 | フィールド | 型 | 説明 |
 | --- | --- | --- |
 | `deviceFilter` | `string[]?` | 表示対象デバイス ID。省略=全デバイス |
-| `deviceRef` | `number[]?` | `devices[]` 配列へのインデックス参照（`deviceFilter` の代替） |
+| `deviceRef` | `number?` | `devices[]` 配列への単一インデックス参照（`deviceFilter` の代替） |
 | `sensorFilter` | `string[]?` | 表示対象センサ番号。省略=全センサ |
 | `groupBy` | `"deviceId" \| "sensorNumber"` | 線の色分け基準（デフォルト: `deviceId`） |
 | `groupLabels` | `Record<string, string>?` | グループ値→表示名マッピング |
@@ -320,7 +320,7 @@ SPA は **このレジストリのみ ID を環境変数で持つ**。実デー�
 | フィールド | 型 | 説明 |
 | --- | --- | --- |
 | `deviceFilter` | `string[]` | 対象デバイス（最新値を表示） |
-| `deviceRef` | `number[]?` | `devices[]` 配列へのインデックス参照 |
+| `deviceRef` | `number?` | `devices[]` 配列への単一インデックス参照 |
 | `metric` | `Metric?` | 表示メトリック（デフォルト: `battery_v`） |
 | `ranges` | `[number, number, number, number]?` | `[min, yellowStart, greenStart, max]` ゾーン |
 
@@ -330,7 +330,7 @@ SPA は **このレジストリのみ ID を環境変数で持つ**。実デー�
 | --- | --- | --- |
 | `content` | `string?` | 表示テキスト（改行可） |
 | `contentRef` | `number?` | `deviceLabels[]` 配列へのインデックス参照（`content` の代替） |
-| `fontSize` | `number?` | フォントサイズ（px） |
+| `fontSize` | `string \| number?` | CSSのフォントサイズ。数値は従来どおりpxとして扱う |
 | `align` | `string?` | テキスト揃え（`left` / `center` / `right`） |
 
 #### image パネル追加フィールド

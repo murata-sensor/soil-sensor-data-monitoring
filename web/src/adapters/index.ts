@@ -18,7 +18,7 @@ const ADAPTERS: Record<SchemaType, { toNormalized(v: string[][]): NormalizedRow[
 };
 
 export function isSchemaType(s: string): s is SchemaType {
-  return s in ADAPTERS;
+  return Object.hasOwn(ADAPTERS, s);
 }
 
 export function toNormalized(schemaType: SchemaType, values: string[][]): NormalizedRow[] {
