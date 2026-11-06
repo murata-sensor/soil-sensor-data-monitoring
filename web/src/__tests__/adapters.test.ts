@@ -19,6 +19,17 @@ const M5_ROW = [
   "4.831999779", "21.3125", "0", "0.100000001", "0.100000001",
   "0.008", "0", "65.53500366", "0", "-79",
 ];
+const M5_CLOUD_HEADER = [
+  "Date", "SerialNumber", "Firmware", "Battery(V)", "Temperature(degC)",
+  "VWC(%)", "VWC rock(%)", "VWC coco(%)", "EC bulk(dS/m)",
+  "EC pore(dS/m)", "EC pore coco(dS/m)", "Id", "Core2 Battery(V)",
+  "WiFi RSSI(dBm)", "Error",
+];
+const M5_CLOUD_ROW = [
+  "2026-11-06 08:13:30", "synthetic-device", "1.0", "5.064", "20.56",
+  "12.3", "4.9", "2.1", "0.008", "0.02", "0.087", "synthetic-id",
+  "4.117", "-74", "0",
+];
 
 const MX_HEADER = [
   "Date", "MCC", "MNC", "area code", "cell id",
@@ -69,6 +80,24 @@ describe("m5stack adapter", () => {
   });
   it("does not expose Date from M5Stack", () => {
     expect("Date from M5Stack" in M5_HEADERS).toBe(false);
+  });
+  it("maps M5Core2 Cloud Logger columns by header regardless of their order", () => {
+    const rows = toNormalized("m5stack", [M5_CLOUD_HEADER, M5_CLOUD_ROW]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({
+      ts: "2026-11-06 08:13:30",
+      deviceId: "synthetic-device",
+      battery_v: 5.064,
+      temperature_c: 20.56,
+      vwc_pct: 12.3,
+      vwc_rock_pct: 4.9,
+      vwc_coco_pct: 2.1,
+      ec_bulk_dsm: 0.008,
+      ec_pore_dsm: 0.02,
+      ec_pore_coco_dsm: 0.087,
+      rssi_dbm: -74,
+      error_flag: 0,
+    });
   });
   it("skips blank and short rows safely", () => {
     const rows = toNormalized("m5stack", [M5_HEADER, [], M5_ROW, M5_ROW.slice(0, 3)]);

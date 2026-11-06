@@ -98,6 +98,10 @@ I EC bulk(dS/m), J EC pore(dS/m), K EC pore Coco(dS/m),
 L Error flag, M WiFi RSI(dBm)
 ```
 
+- Cloud Logger の CSV 形式もヘッダー名で対応する。`Firmware`、`Id`、`Core2 Battery(V)` は
+  正規化モデルに対応する項目がないため読み飛ばす。列順は問わない。
+- Cloud Logger 形式の別名: `VWC rock(%)` / `VWC coco(%)`、
+  `EC pore coco(dS/m)`、`Error`、`WiFi RSSI(dBm)`。
 - `ts = A`、`deviceId = B`。
 - 1 デバイス = 1 スプレッドシート（または 1 シート）想定。`siteId` はレジストリで紐付け。
 

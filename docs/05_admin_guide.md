@@ -87,6 +87,11 @@ viewer ロールのユーザーは **`acl` に行を入れない限り 1 つも�
 誤記した読み取り方式では直接アクセスしません。未指定時は従来どおり
 `headerRow=1`、`accessMode=direct`、`tz=Asia/Tokyo` です。読み込みで設定表を書き換えることはありません。
 
+M5Core2 Cloud Logger の Spreadsheet は `schemaType=m5stack` で登録します。
+`sheetName` に測定データのタブ名（例: `soil_sensor`）、`headerRow=1` を指定してください。
+Logger 固有の列名と並び順はヘッダーから判定します。CSV はダウンロードして読み込むのではなく、
+Logger が書き込んでいる Spreadsheet をデータソースとして登録します。
+
 **`accessMode` の選び方**:
 
 - `proxy` （推奨）: GAS WebApp 経由で読む。Drive 共有は **GAS のオーナー（あなた）1 アカウント** だけで済む。
