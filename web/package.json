@@ -15,6 +15,7 @@
     "chartjs-adapter-date-fns": "^3.0.0",
     "chartjs-plugin-annotation": "^3.1.0",
     "date-fns": "^3.6.0",
+    "firebase": "~13.2.0",
     "react": "^18.3.1",
     "react-chartjs-2": "^5.2.0",
     "react-dom": "^18.3.1",
@@ -40,7 +41,15 @@
     "vite": "^7.3.7",
     "vitest": "^4.1.12"
   },
+  "overrides": {
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.5"
+    },
+    "@firebase/firestore": {
+      "@grpc/grpc-js": "^1.14.7"
+    }
+  },
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=24.12.0"
   }
 }

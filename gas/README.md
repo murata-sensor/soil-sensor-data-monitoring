@@ -19,13 +19,35 @@ Script Properties: `INGEST_TOKEN`（必須）、`M5_TARGET_SHEET` / `MX_TARGET_S
 | --- | --- |
 | `admin_api.gs` | 管理画面からの読み書き API（ID トークン検証 + `ADMIN_ALLOWED_EMAILS` チェック） |
 | `read_proxy.gs` | `accessMode=proxy` のデータソース読み出し API |
+| `firebase_auth.gs` | Firebase 認証を使う場合、管理・閲覧の両プロジェクトに追加する検証ヘルパ |
 
 管理 API と閲覧 API は **別々の GAS プロジェクト**に配置する。
 両方が `doPost` を定義しているため、同じプロジェクトの別デプロイでは分離できない。
 
-Script Properties: 両 API に `GOOGLE_OAUTH_CLIENT_ID`（必須）、
+Script Properties: 従来の Google 認証では両 API に `GOOGLE_OAUTH_CLIENT_ID`（必須）、
 スタンドアロン時は `REGISTRY_SPREADSHEET_ID`（必須）。
 管理 API には `ADMIN_ALLOWED_EMAILS` も登録し、対象者を Registry の `users` でも有効な `admin` にする。
+
+### Firebase Authentication（任意）
+
+実証実験の利用者向けに、ログイン証明の自動更新と端末ごとの保存方法の選択を利用できる。
+[Pages 側の設定・切替手順](../docs/03_pages_deploy.md#firebase-authentication任意)も併せて実施する。
+情報管理の承認前に本番へ適用しない。
+
+- 管理・閲覧の **両方の別プロジェクト**に `firebase_auth.gs` を追加し、各 API 本体も更新する。
+- 両方の Script Properties に `AUTH_PROVIDER=firebase`、`FIREBASE_PROJECT_ID`、`FIREBASE_API_KEY` を設定する。
+  API キーは対象 Firebase プロジェクトのものを使う。GAS からの通信はブラウザーのリファラー制限付きキーを使えないため、
+  必要なら同じプロジェクトにサーバー照会用キーを作り、Identity Toolkit API のみに API 制限を設定する。
+- `AUTH_PROVIDER` 未設定／`google` では従来の検証を維持する。Firebase 設定不足や不明な方式では拒否し、従来方式に自動で戻さない。
+- 検証は Identity Toolkit の `accounts:lookup` に ID トークンを POST して行う。通常の Firebase Authentication でも使う API であり、
+  Identity Platform へのアップグレードやサービスアカウント秘密鍵は不要。
+  プロジェクト・発行元・期限・Google ログイン・メール確認を確認し、Google 側で検証されたアカウントと照合する。
+  無効化・セッション失効日時も確認し、Registry の有効状態・ACL・管理者許可一覧は各要求で従来どおり適用する。
+- 検証結果や権限はキャッシュせず、API 要求ごとに URL Fetch を1回使う。通信失敗時はデータを返さない。
+  ブラウザー側の一時的な更新失敗だけで保存セッションを削除することはない。
+
+Firebase モードの保持期間は SDK が管理し、従来の30日制限は適用しない。
+以下の One Tap・Google 自動選択・30日保持・`soil_*` 認証保存に関する説明は **従来の Google 認証モードのみ**に適用する。
 
 ## (C) アラート送信用（FTP データ用スプレッドシートにバインド）
 

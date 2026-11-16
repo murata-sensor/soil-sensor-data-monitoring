@@ -366,6 +366,18 @@ SPA は **このレジストリのみ ID を環境変数で持つ**。実デー�
   5. ユーザがソースを選択 → `schemaType` に応じたアダプタでロード
 - `role=admin` のみが `/admin`（後述）にアクセス可。
 
+### Firebase Authentication（任意の認証方式）
+
+- `VITE_AUTH_PROVIDER=firebase` で Google プロバイダーを使う Firebase Authentication に切り替える。
+  未設定／`google` では従来方式を維持する。Firebase モードは `VITE_GAS_PROXY_URL` 必須で、Sheets の直接読み取りを使わない。
+- 「この端末にログイン状態を保存する」は初期値未チェック。未チェックはタブ単位のセッション保存、
+  チェック時は端末内の永続保存を使う。SDK がトークンを更新し、独自の30日期限は設けない。
+  明示ログアウト、セッション失効、アカウント無効化、保存データ削除などでは再ログインを必要とする。
+- GAS は管理・閲覧の両プロジェクトに `firebase_auth.gs` を配置し、`AUTH_PROVIDER=firebase` と
+  `FIREBASE_PROJECT_ID`・`FIREBASE_API_KEY` を設定する。トークンを Google の `accounts:lookup` に照会して検証し、
+  Registry の有効状態・ACL・管理者許可一覧による認可を引き続き行う。
+- 測定データの保存先は変更しない。情報管理の承認後に、[切替手順](docs/03_pages_deploy.md#firebase-authentication任意)に従い本番へ適用する。
+
 ## 7. フロントエンド
 
 - React 18 + Vite + TypeScript + TailwindCSS + Chart.js（`react-chartjs-2`）+ Zustand（状態管理）。

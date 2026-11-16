@@ -33,6 +33,86 @@
 > `VITE_BASE_PATH` を指定する場合は、実際の公開先のパスと一致させること。
 > 標準の `https://<owner>.github.io/<repo>/` なら、未設定でもワークフローが `/<repo>/` を補完する。
 
+### Firebase Authentication（任意）
+
+非商用の実証実験で Google ログインを維持しやすくするための追加設定。
+未設定では従来の Google Identity Services 認証を維持する。
+**情報管理の承認後にのみ本番へ適用する。**
+Firebase SDK の依存関係に合わせ、ローカル開発は Node.js 24.12 以上を使う。
+Firebase パッケージに同梱される未使用の Firestore 用 gRPC 依存にも既知の問題があるため、
+`package.json` の override で修正版を指定する。画面は Firestore を読み込まない。
+開発用の typescript-eslint が使う minimatch にも DoS の監査指摘があるため、
+同様に対象の依存関係だけを修正版へ上書きする。typescript-eslint 自体の強制ダウングレードは行わない。
+
+#### 事前設定
+
+1. Firebase コンソールでプロジェクトを用意する。通常の Authentication・Google ログインだけなら
+   Spark プランで開始でき、Identity Platform、Firestore、Cloud Functions、課金先登録は不要。
+   既存の Google Cloud プロジェクトを使う場合は、その課金設定・OAuth 設定を先に確認する。
+2. Web アプリを登録し、表示される `apiKey`・`projectId`・`authDomain` を控える。
+   Analytics の有効化は不要。これらの Web 設定値は公開値であり、サービスアカウントの秘密鍵ではない。
+3. Authentication → Sign-in method で **Google のみ**有効化し、サポートメールを設定する。
+4. Authentication → Settings → Authorized domains に `<owner>.github.io` を登録する。
+   ローカル試験に使う場合は `localhost` も明示的に登録する。
+   Google 側の OAuth クライアントに追加設定が必要な場合は、Firebase の案内に従い、
+   `https://<authDomain>/__/auth/handler` を承認済みリダイレクト URI に設定する。
+5. 閲覧 Proxy を必ず用意する。Firebase モードは Sheets の直接読み取りを使わず、
+   `VITE_GAS_PROXY_URL` 未設定では設定エラーを表示する。
+
+以下を GitHub Actions の Repository Variables に追加する（ローカルは `web/.env`）。
+設定画面は **リポジトリの Settings → Secrets and variables → Actions → Variables → New repository variable**。
+既存の値を変更するときは、その項目の編集ボタンを使う。Variables の変更だけでは公開済み画面には反映されず、再ビルド・公開が必要。
+
+| Name | 値 |
+| --- | --- |
+| `VITE_AUTH_PROVIDER` | `firebase`（本番切替までは未設定または `google`） |
+| `VITE_FIREBASE_API_KEY` | Web アプリの `apiKey` |
+| `VITE_FIREBASE_PROJECT_ID` | Web アプリの `projectId` |
+| `VITE_FIREBASE_AUTH_DOMAIN` | Web アプリの `authDomain`（通常 `<projectId>.firebaseapp.com`、URL ではなくホスト名） |
+
+`VITE_GOOGLE_CLIENT_ID` は従来モード用。Firebase モードは Firebase プロジェクト側の Google プロバイダー設定を使用する。
+API キーを使っていても、閲覧許可の判定は Registry の `users`・`acl`、管理操作はさらに `ADMIN_ALLOWED_EMAILS` で行う。
+Firebase への初回ログインで認証ユーザーが作られても、Registry に未登録なら測定データは見えない。
+Firebase には認証用の利用者情報が保存されるが、この変更で測定データを移したり Analytics へ送信したりはしない。
+
+#### ログイン状態の保存
+
+- 「**この端末にログイン状態を保存する**」は初期値 **未チェック**。
+  未チェックは Firebase の `browserSessionPersistence` を使い、このタブ内の再読み込みでは維持し、タブを閉じるまで保持する。
+- チェック時は `browserLocalPersistence` を使い、ブラウザー再起動後も原則ログアウトまで保持する。30日の独自期限は設けない。
+- 保存先の設定が成功してからログイン用ポップアップを開く。保存できない場合、別の保存方式でログイン成功にしない。
+- 既存セッションの復元時は保存先を切り替えず、チェック操作なしで保存期間を延ばさない。
+  保存先は **次回の明示ログイン時**に選び直す。
+- SDK が ID トークンを自動更新するため、通常の期限更新で One Tap や追加の Sheets 同意を要求しない。
+  初回同意、アカウント無効化、セッション失効、保存データ削除、別の端末などでは再ログインが必要。
+- 共有端末では未チェックで利用し、利用後は明示的にログアウトする。
+  ブラウザーのセッション復元などの影響もあるため、タブを閉じる操作だけを完全なデータ消去の保証としない。
+  ダッシュボードの表示設定は従来どおり端末に残る。このチェックは表示設定の保存を制御しない。
+- 永続ログインの別タブでのログアウト・利用者変更は Firebase SDK で同期し、表示中の画面も更新する。
+  タブ単位のログインは他タブと同じ挙動とは限らない。
+
+#### 切替・確認・切り戻し
+
+1. Registry をバックアップし、現在の Pages コミット・GAS の公開版・設定を控える。
+2. 一時的に利用を止め、[GAS 側の Firebase 設定](../gas/README.md#firebase-authentication任意)を
+   管理・閲覧の両プロジェクトに適用し、新しいバージョンを公開する。
+3. 上記 Variables を設定し、Pages を再ビルド・公開する。新旧トークンを同時に許可する切替ではないため、
+   GAS と Pages の反映の間はログイン・API 利用に失敗する。
+4. 新方式へ移行した端末では旧 `soil_user`・`soil_login_at`・Sheets 用トークンを削除し、
+   Firebase で一度ログインし直す。Google 側の過去の Sheets 許可は自動で取り消さない。
+5. 個人端末のチェックあり／共有端末のチェックなしで、再読み込み・タブ終了・ブラウザー再起動・
+   1時間超の利用・ログアウト後の再表示を確認する。別タブ同期、一般閲覧者の ACL、無効化、
+   管理者の読み書き、ポップアップ拒否・通信失敗も別途確認する。
+
+切り戻す場合は利用を止め、両 GAS の `AUTH_PROVIDER` を `google` に戻して `GOOGLE_OAUTH_CLIENT_ID` を確認し、
+Pages の `VITE_AUTH_PROVIDER` も `google` に戻して再公開する。
+Firebase のログイン保存情報は旧画面では使わないが、将来 Firebase に再切替した際に復元され得る。
+必要な端末では切替前に Firebase モードでログアウトするか、サイトの保存データを削除する。
+別端末のセッションまで失効させる場合は Firebase 側で対象ユーザーのセッションを失効させる。
+
+コードのテストだけでは実アカウント・ブラウザーごとの挙動や公開先の設定まで検証できないため、
+本番切替は上記の実機確認と情報管理の承認をもって完了とする。
+
 ---
 
 ## 2. Pages を有効化する（最初の 1 回だけ）

@@ -157,6 +157,9 @@ function doPost(e) {
 function _adminVerifyIdToken(token) {
   if (typeof token !== 'string' || token.length > 8192 || token.trim() !== token
       || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)) throw new Error('invalid idToken');
+  const provider = (PropertiesService.getScriptProperties().getProperty('AUTH_PROVIDER') || 'google').trim();
+  if (provider === 'firebase') return _firebaseVerifyIdToken(token);
+  if (provider !== 'google') throw new Error('unknown auth provider');
   const aud = (PropertiesService.getScriptProperties().getProperty('GOOGLE_OAUTH_CLIENT_ID') || '').trim();
   if (!aud) throw new Error('OAuth client not configured');
   const url = 'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(token);
