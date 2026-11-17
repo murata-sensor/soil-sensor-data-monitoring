@@ -1,8 +1,13 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { renderSignInButton, restoreSession, getAccessToken, getValidIdToken, signOut, syncSessionFromStorage, SIGN_IN_REQUIRED_EVENT, SESSION_CHANGED_EVENT, AUTH_STORAGE_FAILED_EVENT } from "../auth/google";
+import { isFirebaseAuthEnabled, renderSignInButton, restoreSession, getAccessToken, getValidIdToken, signOut, syncSessionFromStorage, SIGN_IN_REQUIRED_EVENT, SESSION_CHANGED_EVENT, AUTH_STORAGE_FAILED_EVENT } from "../auth/google";
+import FirebaseLoginGate from "./FirebaseLoginGate";
 import { useApp } from "../store";
 
 export default function LoginGate({ children }: { children: React.ReactNode }) {
+  return isFirebaseAuthEnabled ? <FirebaseLoginGate>{children}</FirebaseLoginGate> : <LegacyLoginGate>{children}</LegacyLoginGate>;
+}
+
+function LegacyLoginGate({ children }: { children: React.ReactNode }) {
   const user = useApp((s) => s.user);
   const setUser = useApp((s) => s.setUser);
   const btnRef = useRef<HTMLDivElement>(null);

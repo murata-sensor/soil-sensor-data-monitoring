@@ -130,6 +130,10 @@ export default function Dashboard() {
   }, [user]);
 
   const ftpSheetName = settings?.ftpSheetName ?? "sensor_raw";
+  const proxyRegistry = Boolean(import.meta.env.VITE_GAS_PROXY_URL);
+  // Direct mode still refreshes client-side permissions on selection changes.
+  const registrySourceId = proxyRegistry ? null : selectedSourceId;
+  const registrySheetName = proxyRegistry ? null : ftpSheetName;
 
   useEffect(() => {
     setAllowed([]);
@@ -162,23 +166,22 @@ export default function Dashboard() {
       if (!me || !me.enabled) { setUnregistered(true); return; }
       setIsAdmin(me.role === "admin");
       const candidates = resolveAllowedSources(user.email, src, users, acl);
-      const accessResults = await Promise.all(
-        candidates.map(async (source) => {
-          const accessible = await canAccessSource(source, user.idToken);
-          return { source, accessible };
-        }),
-      );
+      // Proxy registry reads already enforce access. Measurement reads also
+      // recheck it, so individual Drive probes are only needed in direct mode.
+      const list = proxyRegistry ? candidates : (await Promise.all(
+        candidates.map(async (source) => ({
+          source, accessible: await canAccessSource(source, user.idToken),
+        })),
+      )).filter((result) => result.accessible).map((result) => result.source);
       if (!isCurrent()) return;
-      const list = accessResults
-        .filter((r) => r.accessible)
-        .map((r) => r.source);
       setAllowed(list);
       // Use persisted sourceId if Zustand store hasn't been updated yet (first load)
-      const savedSourceId = selectedSourceId || loadSettings(user.email).selectedSourceId;
+      const currentSourceId = useApp.getState().selectedSourceId;
+      const savedSourceId = currentSourceId || loadSettings(user.email).selectedSourceId;
       const selectedStillAvailable = savedSourceId && list.some((s) => s.sourceId === savedSourceId);
       if (!selectedStillAvailable) {
         setSelectedSource(list.length ? list[0] : null);
-      } else if (!selectedSourceId && savedSourceId) {
+      } else if (!currentSourceId && savedSourceId) {
         // Store hasn't caught up yet — set it explicitly
         setSelectedSource(savedSourceId);
       }
@@ -213,7 +216,7 @@ export default function Dashboard() {
       if (registryRetry.current !== null) clearTimeout(registryRetry.current);
       registryRetry.current = null;
     };
-  }, [user, setTheme, setSelectedSource, selectedSourceId, ftpSheetName]);
+  }, [user, setTheme, setSelectedSource, proxyRegistry, registrySourceId, registrySheetName]);
 
   useEffect(() => {
     if (!user || !selectedSourceId) {

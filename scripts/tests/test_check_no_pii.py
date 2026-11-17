@@ -51,7 +51,7 @@ def test_scans_public_files_but_not_ignored_local_secrets(tmp_path, monkeypatch)
     (tmp_path / ".env.example").write_text("PLACEHOLDER", encoding="utf-8")
     (tmp_path / "synthetic.cjs").write_text("example", encoding="utf-8")
     monkeypatch.setattr(check_no_pii, "ROOT", tmp_path)
-    assert {path.name for path in check_no_pii.iter_files()} == {".env.example", "synthetic.cjs"}
+    assert {path.name for path in check_no_pii.iter_files()} == {".gitignore", ".env.example", "synthetic.cjs"}
 
 
 @pytest.mark.parametrize("suffix", [".pem", ".key"])
@@ -73,4 +73,25 @@ def test_scans_a_tracked_key_even_when_its_extension_is_ignored(
     output = capsys.readouterr()
     assert f"{tracked.name}:1: private key" in output.err
     assert ignored.name not in output.err
+    assert secret not in output.out + output.err
+
+
+@pytest.mark.parametrize("filename", ["id_rsa", "id_ed25519", "synthetic-private-key"])
+def test_scans_extensionless_keys_in_public_files(filename, tmp_path, monkeypatch, capsys):
+    subprocess.run(["git", "init", "--quiet", str(tmp_path)], check=True)
+    (tmp_path / ".gitignore").write_text("local-only/\n", encoding="utf-8")
+    secret = "-----BEGIN " + "OPENSSH PRIVATE KEY-----"
+    tracked = tmp_path / filename
+    tracked.write_text(secret + "\nsynthetic data only\n", encoding="utf-8")
+    subprocess.run(["git", "add", filename], cwd=tmp_path, check=True)
+    ignored = tmp_path / "local-only" / "id_rsa"
+    ignored.parent.mkdir()
+    ignored.write_text(secret, encoding="utf-8")
+    monkeypatch.setattr(check_no_pii, "ROOT", tmp_path)
+    monkeypatch.setattr(check_no_pii, "BLOCKLIST_FILE", tmp_path / "missing")
+
+    assert check_no_pii.main() == 1
+    output = capsys.readouterr()
+    assert f"{filename}:1: private key" in output.err
+    assert "local-only" not in output.err
     assert secret not in output.out + output.err

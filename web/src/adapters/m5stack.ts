@@ -10,12 +10,20 @@ export const HEADER_MAP: Record<string, keyof NormalizedRow> = {
   "Temperature(degC)": "temperature_c",
   "VWC(%)": "vwc_pct",
   "VWC Coconut Peat(%)": "vwc_coco_pct",
+  // M5Core2 Cloud Logger exports use the shorter labels below and place
+  // Rock Wool before Coconut Peat. Mapping is header-based, so column order
+  // does not affect the normalized readings.
+  "VWC coco(%)": "vwc_coco_pct",
   "VWC Rock Wool(%)": "vwc_rock_pct",
+  "VWC rock(%)": "vwc_rock_pct",
   "EC bulk(dS/m)": "ec_bulk_dsm",
   "EC pore(dS/m)": "ec_pore_dsm",
   "EC pore Coco(dS/m)": "ec_pore_coco_dsm",
+  "EC pore coco(dS/m)": "ec_pore_coco_dsm",
   "Error flag": "error_flag",
+  "Error": "error_flag",
   "WiFi RSI(dBm)": "rssi_dbm",
+  "WiFi RSSI(dBm)": "rssi_dbm",
 };
 
 const STRING_FIELDS = new Set<keyof NormalizedRow>(["ts", "deviceId"]);

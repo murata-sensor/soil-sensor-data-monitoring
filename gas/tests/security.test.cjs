@@ -21,6 +21,9 @@ function makeSheet(values) {
 
 function loadScript(filename, services) {
   const context = vm.createContext(services);
+  if (['admin_api.gs', 'read_proxy.gs'].includes(filename)) {
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'firebase_auth.gs'), 'utf8'), context);
+  }
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', filename), 'utf8'), context);
   return context;
 }
@@ -244,6 +247,104 @@ function adminFixture() {
   return { ...fixture, services, target, context, call, state: () => ({ written, cleared, released }) };
 }
 
+function firebaseFixture(createFixture) {
+  const fixture = createFixture();
+  Object.assign(fixture.properties, {
+    AUTH_PROVIDER: 'firebase', FIREBASE_PROJECT_ID: 'synthetic-project', FIREBASE_API_KEY: 'synthetic-key',
+  });
+  const now = Math.floor(Date.now() / 1000);
+  const claims = {
+    aud: 'synthetic-project', iss: 'https://securetoken.google.com/synthetic-project',
+    sub: 'synthetic-uid', email: 'viewer@example.test', email_verified: true,
+    exp: now + 3600, iat: now, auth_time: now - 60, firebase: { sign_in_provider: 'google.com' },
+  };
+  const account = {
+    localId: claims.sub, email: claims.email, emailVerified: true,
+    validSince: String(now - 120), providerUserInfo: [{ providerId: 'google.com' }],
+  };
+  let status = 200;
+  let calls = 0;
+  fixture.context.Utilities = {
+    ...fixture.context.Utilities,
+    base64DecodeWebSafe: (value) => Buffer.from(value, 'base64url'),
+    newBlob: (value) => ({ getDataAsString: () => value.toString('utf8') }),
+  };
+  fixture.services.UrlFetchApp.fetch = (url, options) => {
+    calls += 1;
+    assert.equal(url, 'https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=synthetic-key');
+    assert.equal(options.method, 'post');
+    assert.equal(options.contentType, 'application/json');
+    assert.equal(typeof JSON.parse(options.payload).idToken, 'string');
+    return { getResponseCode: () => status, getContentText: () => JSON.stringify({ users: [account] }) };
+  };
+  return {
+    ...fixture, firebaseClaims: claims, account,
+    calls: () => calls, rejectToken: () => { status = 400; },
+    request: () => fixture.call({
+      action: 'getSheet', sheet: 'theme', sourceId: 'allowed',
+      idToken: 'synthetic.' + Buffer.from(JSON.stringify(claims)).toString('base64url') + '.signature',
+    }),
+  };
+}
+
+for (const createFixture of [proxyFixture, adminFixture]) {
+  test(createFixture.name + ': Firebase verification preserves Registry authorization', () => {
+    const fixture = firebaseFixture(createFixture);
+    assert.equal(fixture.request().ok, true);
+    assert.equal(fixture.calls(), 1);
+    fixture.registry.users[1][2] = 'FALSE';
+    assert.equal(fixture.request().ok, false);
+    assert.equal(fixture.calls(), 2);
+  });
+
+  test(createFixture.name + ': Firebase claims require Google verification, not just decoding', () => {
+    const fixture = firebaseFixture(createFixture);
+    fixture.rejectToken();
+    assert.equal(fixture.request().ok, false);
+    assert.equal(fixture.calls(), 1);
+  });
+
+  test(createFixture.name + ': wrong-project, expired and non-Google Firebase tokens fail closed', () => {
+    for (const changes of [
+      { aud: 'other-project' }, { iss: 'https://securetoken.google.com/other-project' },
+      { exp: 1 }, { email_verified: false }, { sub: '' },
+      { firebase: { sign_in_provider: 'password' } },
+      { firebase: { sign_in_provider: 'google.com', tenant: 'another-tenant' } },
+    ]) {
+      const fixture = firebaseFixture(createFixture);
+      Object.assign(fixture.firebaseClaims, changes);
+      assert.equal(fixture.request().ok, false);
+      assert.equal(fixture.calls(), 0);
+    }
+  });
+
+  test(createFixture.name + ': disabled, revoked and inconsistent Firebase accounts fail closed', () => {
+    for (const changes of [
+      { disabled: true }, { validSince: String(Math.floor(Date.now() / 1000)) },
+      { validSince: undefined }, { emailVerified: false }, { localId: 'other-uid' },
+      { email: 'other@example.test' }, { providerUserInfo: [] },
+    ]) {
+      const fixture = firebaseFixture(createFixture);
+      Object.assign(fixture.account, changes);
+      assert.equal(fixture.request().ok, false);
+      assert.equal(fixture.calls(), 1);
+    }
+  });
+
+  test(createFixture.name + ': Firebase configuration never falls back to Google tokeninfo', () => {
+    for (const property of ['FIREBASE_API_KEY', 'FIREBASE_PROJECT_ID']) {
+      const fixture = firebaseFixture(createFixture);
+      delete fixture.properties[property];
+      assert.equal(fixture.request().ok, false);
+      assert.equal(fixture.calls(), 0);
+    }
+    const fixture = firebaseFixture(createFixture);
+    fixture.properties.AUTH_PROVIDER = 'typo';
+    assert.equal(fixture.request().ok, false);
+    assert.equal(fixture.calls(), 0);
+  });
+}
+
 test('malformed admin rows never clear or write existing settings', () => {
   for (const rows of [undefined, null, {}, [null], [['key'], [{}]], [[]]]) {
     const { call, state } = adminFixture();
@@ -450,6 +551,45 @@ test('admin lock contention does not write and a failed write releases the lock 
   assert.equal(failed.call({ rows: [['key']] }).ok, false);
   assert.equal(failed.state().cleared, false);
   assert.equal(failed.state().released, true);
+});
+
+test('admin saves reject callers removed from the allowlist while waiting for the lock', () => {
+  const { call, properties, services, state } = adminFixture();
+  properties.ADMIN_ALLOWED_EMAILS = 'viewer@example.test,other@example.test';
+  const getLock = services.LockService.getScriptLock;
+  services.LockService.getScriptLock = () => {
+    const lock = getLock();
+    return { ...lock, tryLock: (...args) => {
+      const acquired = lock.tryLock(...args);
+      properties.ADMIN_ALLOWED_EMAILS = 'other@example.test';
+      return acquired;
+    } };
+  };
+  assert.equal(call({ rows: [['key', 'value'], ['synthetic', 'saved']] }).error, 'forbidden');
+  assert.equal(state().written, undefined);
+  assert.equal(state().cleared, false);
+  assert.equal(state().released, true);
+});
+
+test('users saves require an admin in the latest allowlist after waiting for the lock', () => {
+  const { call, properties, services, state } = adminFixture();
+  properties.ADMIN_ALLOWED_EMAILS = 'viewer@example.test,other@example.test';
+  const revision = call({ action: 'getSheet', sheet: 'users' }).revision;
+  const getLock = services.LockService.getScriptLock;
+  services.LockService.getScriptLock = () => {
+    const lock = getLock();
+    return { ...lock, tryLock: (...args) => {
+      const acquired = lock.tryLock(...args);
+      properties.ADMIN_ALLOWED_EMAILS = 'viewer@example.test';
+      return acquired;
+    } };
+  };
+  const rows = [['email', 'role', 'enabled'], ['viewer@example.test', 'viewer', 'TRUE'],
+    ['other@example.test', 'admin', 'TRUE']];
+  assert.equal(call({ sheet: 'users', rows, expectedRevision: revision }).error, 'admin_required');
+  assert.equal(state().written, undefined);
+  assert.equal(state().cleared, false);
+  assert.equal(state().released, true);
 });
 
 test('standalone read and admin projects can explicitly open their registry', () => {

@@ -260,10 +260,22 @@ Web ダッシュボードからユーザーが Google ログインするため�
 
 ### 3-2. スコープ
 
+**閲覧 Proxy を使う場合（推奨）**
+
+Web ダッシュボードのログインでは、基本プロフィール用の `openid`・`email`・`profile` だけを使う。
+閲覧者ごとの `spreadsheets.readonly` は追加しない。スプレッドシートは GAS の実行者の権限で読み取り、
+利用者・閲覧対象の確認は Proxy が行う。GAS の公開設定は [`04_gas_setup.md`](04_gas_setup.md) の B-4 を参照。
+
+**Proxy を設定せず、ブラウザーから直接 Sheets API を読む場合だけ**、次のスコープを追加する。
+
 1. 「スコープを追加または削除」をクリック
 2. フィルタで `spreadsheets` を検索
 3. `Google Sheets API` の `.../auth/spreadsheets.readonly` にチェック
 4. 「更新」→「保存して次へ」
+
+`spreadsheets.readonly` は [Google が機密情報へのアクセスとして分類するスコープ](https://developers.google.com/workspace/sheets/api/scopes) で、
+本人確認とは別の許可が必要になる。実際に表示される許可はアプリが要求するスコープで決まるため、
+Cloud 側の一覧を編集するだけで追加認可を止めることはできない。
 
 ### 3-3. テストユーザー
 
