@@ -3,15 +3,23 @@
 > **所要時間**: 約 20〜30 分
 > **前提**: Google アカウントを持っていること、GitHub リポジトリが作成済みであること
 
+**認証方式ごとの読み分け**:
+推奨の Firebase Authentication + 閲覧 Proxy を使う場合、Firebase の作成・Google ログイン有効化は
+[`03_pages_deploy.md`](03_pages_deploy.md#firebase-authentication任意)に従う。
+本ページの手順3・4は従来の Google Identity Services 認証用で、Firebase 用に別の OAuth クライアントを手作業で新規作成する手順ではない。
+Firebase 側から OAuth の追加設定を求められた場合は、その案内に従う。
+Spreadsheet の準備と、FTP 取り込みに使うサービスアカウントの設定は認証方式を変えても引き続き必要。
+
 ---
 
 ## 0. アクセス制御の考え方（先に理解してから 1. へ進む）
 
 このシステムでは **2 段階** の制御があります。両方そろって初めて閲覧できます。
 
-### 段階 1: 「そのアカウントはダッシュボードにログインできるか？」
+### 段階 1: 「本人確認済みのアカウントはダッシュボードを利用できるか？」
 
-`users` シートで管理する。`enabled=TRUE` なら **ログインだけは** できる。
+`users` シートで管理する。`enabled=TRUE` なら **アプリの利用を許可**する。
+Firebase の Google ログイン成功と Registry での利用許可は別であり、未登録・無効な利用者は API で拒否する。
 ただし `enabled=TRUE` でも **どのスプレッドシートが見えるかは別問題**。
 
 ### 段階 2: 「ログインしたアカウントは、どのスプレッドシートを見られるか？」
@@ -20,7 +28,7 @@
 
 **例**: 3 つの圃場（src-001 / src-002 / src-003）に、3 人のユーザーを割り当てる場合
 
-`users` シート（ログイン可否）:
+`users` シート（アプリ利用可否）:
 
 | email | role | enabled |
 | --- | --- | --- |
@@ -45,9 +53,9 @@
 > 「`enabled=TRUE` にしたから全部見える」ということではない、というのが重要なポイント。
 > 圃場を増やしたら `acl` シートに **明示的にそのユーザーの行を追加** する必要があります。
 
-> **おまけ条件**: `acl` で許可していても、データ用スプレッドシートが `accessMode=direct` の場合は
+> **従来方式で Proxy を設定せず直接読む場合のみ**、`acl` で許可していても
 > **そのユーザーの Google アカウントを直接「閲覧者」共有しておく必要があります**（後述）。
-> `accessMode=proxy` にすればこの Drive 共有を省略できます。
+> Firebase では閲覧 Proxy が必須で、閲覧者への Drive 共有は不要。GAS の実行者への共有が必要です。
 
 ---
 
@@ -116,7 +124,7 @@
 | `sheetName` | `soil_sensor` | 実データが入っているタブ名 |
 | `headerRow` | `1` | 通常 `1`。ヘッダが何行目にあるか |
 | `tz` | `Asia/Tokyo` | タイムゾーン |
-| `accessMode` | `direct` または `proxy` | 後述（推奨は `direct`） |
+| `accessMode` | `proxy` または `direct` | 推奨は `proxy`。Firebase では閲覧 Proxy 必須。後述 |
 | `enabled` | `TRUE` | `FALSE` にすると一覧から消える |
 | `notes` | 任意 | メモ |
 
@@ -126,7 +134,7 @@
 | --- | --- | --- |
 | `email` | `alice@example.com` | Google アカウントのメール |
 | `role` | `admin` または `viewer` | `admin` は全データ閲覧 + `/admin` 画面が使える |
-| `enabled` | `TRUE` | `FALSE` にするとログイン自体が拒否される |
+| `enabled` | `TRUE` | `FALSE` にするとアプリの API 利用を拒否。Firebase の本人確認自体とは別 |
 
 **`acl` シート**（重要: ここで「誰がどのデータを見られるか」を決める）
 
@@ -216,10 +224,14 @@ timestamp, detected_at, alert_type, addr, sensor_number, details, status
 #### パターンC: M5Stack / Mechatrax の **既に運用中** の案件
 
 ユーザー（案件主）が既に持っているスプレッドシートをそのまま参照する。
-以下のどちらか方式を選ぶ:
+推奨は Proxy。共有先は実際にデータを読むアカウントに合わせる:
 　
-- **方式 direct（推奨・運用がシンプル）**: 案件主に依頼して、ダッシュボードを使う **全 Google アカウントを「閲覧者」共有** してもらう。`accessMode=direct` で登録。
-- **方式 proxy（Drive 共有を絞りたいとき）**: 案件主に依頼して、Registry を持つ Google アカウント **1 つだけに「閲覧者」共有** してもらう。`accessMode=proxy` で登録（[`04_gas_setup.md`](04_gas_setup.md) の read_proxy デプロイが必要）。
+- **方式 proxy（推奨・Firebase で使用）**: 案件主に依頼して、閲覧 GAS の実行者に「閲覧者」共有してもらう。
+  `accessMode=proxy` で登録し、[`04_gas_setup.md`](04_gas_setup.md) の read_proxy と `VITE_GAS_PROXY_URL` を設定する。
+- **方式 direct（従来認証で Proxy 未設定の場合のみ）**: 全閲覧者の Google アカウントに共有する。
+  アプリ外からもスプレッドシート全体を読めるため、アプリの ACL だけでは制限できない。Mechatrax には使わない。
+
+`VITE_GAS_PROXY_URL` が設定されていれば、既存の `accessMode=direct` 行も Proxy 経由で読み、直接読み取りへ戻らない。
 
 ---
 
@@ -246,7 +258,8 @@ timestamp, detected_at, alert_type, addr, sensor_number, details, status
 
 ## 3. OAuth 同意画面の設定（Web ダッシュボード用）
 
-Web ダッシュボードからユーザーが Google ログインするために必要。
+**従来の Google Identity Services 認証を使う場合の手順**。
+Firebase を使う場合は [Firebase の事前設定](03_pages_deploy.md#事前設定)へ進み、Google プロバイダーを有効化する。
 
 ### 3-1. 同意画面を構成
 
@@ -289,6 +302,8 @@ Cloud 側の一覧を編集するだけで追加認可を止めることはで�
 
 ## 4. OAuth クライアント ID の作成（Web ダッシュボード用）
 
+この節も従来認証用。Firebase の Google プロバイダー設定と混同しないこと。
+
 ### 4-1. クライアント ID を作成
 
 1. 左メニュー「APIとサービス」→「認証情報」を開く
@@ -307,7 +322,7 @@ Cloud 側の一覧を編集するだけで追加認可を止めることはで�
 作成後に表示されるダイアログに **クライアント ID** が表示される（`xxxx.apps.googleusercontent.com` の形式）。
 これをコピーしておく。
 
-> **保存先**: GitHub リポジトリの Settings → Secrets and variables → Variables → `VITE_GOOGLE_CLIENT_ID` に登録する（後で [02_github_actions.md](02_github_actions.md) で設定）
+> **保存先**: GitHub リポジトリの Settings → Secrets and variables → Actions → Variables → `VITE_GOOGLE_CLIENT_ID` に登録する（[03_pages_deploy.md](03_pages_deploy.md)）。
 
 ---
 
@@ -412,12 +427,13 @@ https://drive.google.com/drive/folders/ここがフォルダID
 - [ ] （該当する場合）M5Stack/Mechatrax の既存スプレッドシートを sources シートに登録し、アクセス方式に応じて適切なアカウントに「閲覧者」共有を依頼した
 - [ ] Google Cloud プロジェクトを作成した
 - [ ] Google Sheets API を有効化した
-- [ ] OAuth 同意画面を設定し、テストユーザーを追加した
-- [ ] OAuth クライアント ID を作成し、Client ID を控えた
+- [ ] （従来認証の場合）OAuth 同意画面を設定し、テストユーザーを追加した
+- [ ] （従来認証の場合）OAuth クライアント ID を作成し、Client ID を控えた
+- [ ] （Firebase の場合）[Firebase の事前設定](03_pages_deploy.md#事前設定)で Web アプリ・Google ログイン・承認済みドメインを設定した
 - [ ] サービスアカウントを作成し、JSON 鍵をダウンロードした
 - [ ] スプレッドシートをサービスアカウントに「編集者」で共有した
 - [ ] GitHub Secrets に `GOOGLE_SERVICE_ACCOUNT_JSON` を登録した
-- [ ] GitHub Variables に `VITE_GOOGLE_CLIENT_ID`, `VITE_REGISTRY_SPREADSHEET_ID` を登録した
+- [ ] GitHub Variables に [選んだ認証方式の変数](03_pages_deploy.md#1-variables-を登録する)を登録した
 
 ---
 
@@ -429,7 +445,9 @@ https://drive.google.com/drive/folders/ここがフォルダID
 
 ### OAuth ログインで「アクセスがブロックされました」
 
-→ 手順 3-3 でテストユーザーにそのメールアドレスを追加したか確認。
+→ 従来認証では手順 3-3 のテストユーザーを確認。
+Firebase では [Pages のトラブルシューティング](03_pages_deploy.md#トラブルシューティング)から、
+Google プロバイダー・承認済みドメイン・必要な OAuth 設定を確認する。
 
 ### GitHub Actions が「Permission denied」でスプレッドシートに書き込めない
 

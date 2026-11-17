@@ -8,6 +8,7 @@
 レジストリに登録してアダプタで正規化することでそのまま可視化対象にできる。
 
 主な特徴:
+- **Google ログインの維持**: Firebase Authentication で認証情報を自動更新。「この端末にログイン状態を保存する」を選択可能
 - **マルチデータソース**: 案件ごとに異なる Spreadsheet をレジストリで一元管理
 - **PC 直結ロガー対応**: [soil-sensor-samples-python](https://github.com/murata-sensor/soil-sensor-samples-python) の
   `continuous_log.py --upload-url ...` から直接取り込み（`pc-serial` スキーマ）
@@ -55,6 +56,28 @@
 4. [docs/03_pages_deploy.md](./docs/03_pages_deploy.md): GitHub Pages を有効化してフロントをデプロイ。
 5. [docs/05_admin_guide.md](./docs/05_admin_guide.md): 管理者画面の使い方・レイアウトカスタマイズ。
 6. [docs/06_weather_integration.md](./docs/06_weather_integration.md): 気象データ統合（Open-Meteo / AMeDAS）。
+
+## ログインと閲覧権限
+
+実証実験向けの推奨構成は **Firebase Authentication（Google ログイン）+ GAS 閲覧 Proxy**。
+Google による本人確認と、Registry の `users`・`acl` による利用・閲覧許可は別に判定する。
+測定データは従来どおりスプレッドシートに保存し、Firebase へ移さない。
+閲覧者ごとの Sheets 読み取り権限の追加同意も求めない。
+
+- **保存のチェックなし（初期値）**: このタブを閉じるまでログインを保持。共有端末ではこちらを使い、利用後に明示ログアウトする。
+- **チェックあり**: 同じブラウザーでは、原則ログアウトまで保持。PC・ブラウザー再起動後も復元する。
+- SDK が短命なトークンを自動更新する。アカウント無効化・セッション失効・保存データ削除などでは再ログインが必要。
+  タブを閉じることは完全な保存データ消去の保証ではなく、表示設定も別に端末へ残る。
+
+設定手順は [Firebase の準備と Pages 設定](./docs/03_pages_deploy.md#firebase-authentication任意)、
+[GAS の設定](./docs/04_gas_setup.md#b-2-スクリプトプロパティ)、
+利用者管理は [管理者ガイド](./docs/05_admin_guide.md#ログイン状態の保存と利用停止firebase)を参照。
+実機での確認済み事項・残る確認項目は [運用確認記録](./docs/03_pages_deploy.md#運用確認記録2026-11-17時点)にまとめる。
+
+従来の Google Identity Services 認証も互換用に残す。
+**コードの既定値は従来方式**なので、Firebase を使う環境では Pages の `VITE_AUTH_PROVIDER` と
+両 GAS の `AUTH_PROVIDER` を明示的に `firebase` に設定する。
+新規環境の Firebase 設定は、上記手順の準備を完了してから切り替える。
 
 ## ローカル開発
 
@@ -104,6 +127,7 @@ Git が無視するローカル設定や認証ファイルは対象外。
 | フロント | 用途 |
 | --- | --- |
 | React 18 + Vite + TypeScript | SPA フレームワーク |
+| Firebase Authentication | Google ログイン・ログイン状態の保持・トークン自動更新 |
 | TailwindCSS | ユーティリティ CSS |
 | Chart.js + react-chartjs-2 | グラフ描画 |
 | chartjs-plugin-annotation | イベント縦線注釈 |

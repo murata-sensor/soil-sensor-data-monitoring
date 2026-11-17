@@ -1,7 +1,7 @@
 # SPEC — Soil Sensor Data Monitoring
 
 > 本ドキュメントは本リポジトリの技術仕様。地名・個人情報・顧客情報・実 ID は一切記載しない。
-> Revision: v2.2（カスタムレイアウト・マルチセンサ・アラート対応）
+> Revision: v2.3（Firebase 認証・ログイン保持・閲覧 Proxy の運用を反映）
 
 ## 1. 目的
 
@@ -50,15 +50,18 @@ GitHub Pages 上の SPA で可視化する。閲覧は Google アカウントで
                        │   sources / users / acl / theme / layouts    │
                        └──────────────────────────────────────────────┘
                                           ▲
-                                          │ Sheets API (read/write)
+                                          │ GAS API (read/write)
             ┌─────────────────────────────┴────────────────────────────┐
             │ GitHub Pages SPA  (React + Vite + TS)                    │
-            │   1. Google ログイン                                     │
-            │   2. レジストリで自分にアクセス権があるソース一覧を取得 │
-            │   3. ユーザが選択したスプレッドシートを直接 Sheets API   │
-            │      で読む（スキーマアダプタで正規化してチャート描画） │
+            │   1. Firebase Authentication で Google ログイン         │
+            │   2. GAS Proxy から許可されたレジストリ情報を取得       │
+            │   3. 選択したデータを GAS Proxy 経由で取得し正規化・描画 │
             └──────────────────────────────────────────────────────────┘
 ```
+
+上図は推奨の Firebase + Proxy 構成。GAS が自分の実行者権限でスプレッドシートを読み、
+管理 API は別 GAS プロジェクトで Registry を読み書きする。
+従来認証で Proxy を設定しない場合の直接読み取りは §5.3 / §6 を参照。
 
 ## 4. データモデル
 
@@ -151,7 +154,8 @@ SPA は **このレジストリのみ ID を環境変数で持つ**。実デー�
 
 ### 5.0 アクセス制御モデル（重要）
 
-`users` シートの `enabled` 列は **「このアカウントがダッシュボードにログインできるかどうか」だけ** を表す。
+`users` シートの `enabled` 列は **「本人確認済みのアカウントがアプリを利用できるか」** を表す。
+Firebase のログイン成功・認証ユーザー作成とは別で、未登録・無効な利用者は GAS で API 利用を拒否する。
 `enabled=TRUE` でも `acl` シートに 1 行も無ければ、`viewer` ロールのユーザーは **どのスプレッドシートも見られない**。
 
 参照可能なスプレッドシートはすべて `acl` シートの (email, sourceId) 行で1件ずつ定義する。
@@ -162,7 +166,7 @@ SPA は **このレジストリのみ ID を環境変数で持つ**。実デー�
 | `viewer` | `TRUE` | `(email, sourceId)` がある | その sourceId だけ閲覧可 |
 | `viewer` | `TRUE` | `(email, '*')` がある | 全ソース閲覧可（ワイルドカード） |
 | `viewer` | `TRUE` | 1 行も無い | **ログインはできるがソースが何も出ない** |
-| 任意 | `FALSE` | 任意 | ログイン拒否 |
+| 任意 | `FALSE` | 任意 | アプリの API 利用を拒否（Firebase の本人確認自体とは別） |
 
 例（3 ソース・3 ユーザー）:
 
@@ -196,7 +200,7 @@ SPA は **このレジストリのみ ID を環境変数で持つ**。実デー�
 - bob   → `src-001` のみ
 - carol → `src-002`, `src-003` の 2 つ
 
-> **重要**: `acl` 上で参照を許可しても、実データ Spreadsheet が `accessMode=direct` の場合は
+> **重要**: 従来認証で Proxy を設定せず直接読み取る場合は、`acl` 上で参照を許可しても
 > **そのユーザーの Google アカウントに対して Drive 上で「閲覧者」共有が別途必要**。
 > Drive 共有していなければ Sheets API が 403 を返す。詳しくは §5.3 / §6 を参照。
 
@@ -218,13 +222,13 @@ SPA は **このレジストリのみ ID を環境変数で持つ**。実デー�
 
 ### 5.2 `users` シート
 
-**ログイン可否と役割のみ** を定義する。どのスプレッドシートが見えるかは制御しない（それは §5.3 `acl`）。
+**アプリ利用可否と役割のみ** を定義する。どのスプレッドシートが見えるかは制御しない（それは §5.3 `acl`）。
 
 | 列 | 例 | 説明 |
 | --- | --- | --- |
 | `email` | `prof@example.com` | Google アカウント |
 | `role` | `admin` / `viewer` | `admin` は全 `sources` を見られる + `/admin` を開ける |
-| `enabled` | `TRUE` | `FALSE` でログイン拒否 |
+| `enabled` | `TRUE` | `FALSE` でアプリの API 利用を拒否。Firebase の本人確認自体とは別 |
 
 ### 5.3 `acl` シート（user × source の参照許可表）
 
@@ -237,12 +241,15 @@ SPA は **このレジストリのみ ID を環境変数で持つ**。実デー�
 | `permission` | `read` | 将来 `write` 拡張用 |
 
 - SPA はログイン後、レジストリの `sources` と `acl` を結合して、ユーザに見せるソース選択 UI を構築する。
-- レジストリ ACL に載っていても、**実データの Spreadsheet 自体がそのユーザに Drive 上で共有されていない場合は Sheets API が 403 を返す**。
-  運用ルールとして以下2方式を選択可：
-  - **方式 A（推奨／`accessMode=direct`）**: 実データのスプレッドシートを当該 Google アカウントに「閲覧者」として共有しておく。レジストリ ACL と Drive 共有を一致させる運用。
-  - **方式 B（`accessMode=proxy`）**: 実データはサービスアカウントのみが読み、SPA は **GAS Read Proxy WebApp** 経由で読む（admin による ID トークン検証込み）。Drive 共有を分けたくない案件で使用。
+- **方式 B（推奨／`accessMode=proxy`）**: SPA は **GAS Read Proxy WebApp** 経由で読む。
+  GAS が ID トークン・`users`・ACL を確認し、GAS の実行者権限でデータを読む。閲覧者への Drive 共有は不要。
+  **Firebase 認証ではこの方式が必須**。
+- **方式 A（従来認証で Proxy 未設定の場合のみ／`accessMode=direct`）**:
+  閲覧者自身の Google アカウントで直接 Sheets API を呼び、Sheets 読み取り用の追加許可が必要。
+  Drive の閲覧者共有がなければ 403 となる。共有されたシート全体にはアプリ外からもアクセスでき、
+  アプリの ACL だけでは制限できない。Mechatrax には使わない。
 
-`schemaType` ごと、案件ごとに方式を選択可能。
+`VITE_GAS_PROXY_URL` 設定時は `accessMode=direct` の既存行も含めて Proxy を優先し、拒否時に直接読み取りへ戻らない。
 
 ### 5.4 `theme` / `layouts` シート
 
@@ -355,16 +362,25 @@ SPA は **このレジストリのみ ID を環境変数で持つ**。実デー�
 
 ## 6. 認証 / アクセス制御
 
-- フロントは Google Identity Services (GIS) で OAuth 2.0 トークン取得。
-  - スコープ: `https://www.googleapis.com/auth/spreadsheets.readonly`
-  - 方式 B を使う場合は ID トークン（`openid email`）も取得し、GAS Proxy に Bearer 送付。
-- 起動時シーケンス：
-  1. ログイン → email 取得
-  2. レジストリ Spreadsheet を Sheets API で読む（読めなければ未登録ユーザ扱い）
-  3. `users` で `enabled=TRUE` を確認、role 取得
-  4. `acl` × `sources` 結合で許可ソース一覧を組み立て
-  5. ユーザがソースを選択 → `schemaType` に応じたアダプタでロード
+- 推奨構成は Firebase Authentication の Google プロバイダー + GAS 閲覧 Proxy。
+  フロントは短命な Firebase ID トークンを SDK で更新し、API の JSON POST 本文の `idToken` に入れる。
+  Sheets の直接読み取り用 OAuth トークンは取得せず、閲覧者にその追加同意を求めない。
+- 起動時シーケンス（Proxy 利用時）：
+  1. SDK が保存済みセッションを復元する。なければ Google ログイン
+  2. ID トークンを付けて閲覧 Proxy の `registry` アクションを呼ぶ
+  3. GAS がトークンを検証し、Registry の `users.enabled` と `role` を確認
+  4. GAS が `acl` × `sources` から許可対象の情報を返す
+  5. ユーザがソースを選択 → Proxy が再度認可してデータを返し、フロントのアダプタで正規化
 - `role=admin` のみが `/admin`（後述）にアクセス可。
+  管理 API はさらに `ADMIN_ALLOWED_EMAILS` への登録を要求する。
+
+### 従来認証（互換用）
+
+- `VITE_AUTH_PROVIDER` 未設定／`google` では Google Identity Services を使用する。
+- Proxy 利用時は Google ID トークンを検証する。Sheets 読み取り用の追加許可は求めない。
+- Proxy 未設定の直接読み取り時のみ `https://www.googleapis.com/auth/spreadsheets.readonly` を要求し、
+  閲覧者の権限で Registry とデータを読む。Firebase モードとの混用はしない。
+- 従来方式の30日保持・One Tap による更新は Firebase の保存期間・自動更新とは別。
 
 ### Firebase Authentication（任意の認証方式）
 
@@ -531,11 +547,15 @@ GAS トリガー（`gas/alert_mailer.gs`）が `alerts` シートを監視し、
 
 | Variable | 用途 |
 | --- | --- |
-| `VITE_GOOGLE_CLIENT_ID` | GIS クライアント ID |
-| `VITE_REGISTRY_SPREADSHEET_ID` | レジストリ ID（公開許容。ACL はレジストリ内で行う） |
+| `VITE_AUTH_PROVIDER` | `firebase` または `google`。未設定は従来方式の `google` |
+| `VITE_FIREBASE_API_KEY` | Firebase Web アプリの API キー。Firebase で必須 |
+| `VITE_FIREBASE_PROJECT_ID` | Firebase プロジェクト ID。Firebase で必須 |
+| `VITE_FIREBASE_AUTH_DOMAIN` | Firebase 認証ドメイン。Firebase で必須 |
+| `VITE_GOOGLE_CLIENT_ID` | 従来認証の GIS クライアント ID |
+| `VITE_REGISTRY_SPREADSHEET_ID` | 従来の直接読み取りで必要なレジストリ ID。Proxy の参照先は GAS 側で指定 |
 | `VITE_BASE_PATH` | GitHub Pages のサブパス（例: `/soil-sensor-data-monitoring/`） |
 | `VITE_GAS_ADMIN_URL` | 管理書込 GAS WebApp URL（任意） |
-| `VITE_GAS_PROXY_URL` | 方式 B 用 Read Proxy WebApp URL（任意） |
+| `VITE_GAS_PROXY_URL` | Read Proxy WebApp URL。Firebase・Mechatrax で必須、従来認証でも推奨 |
 
 > 実データの Spreadsheet ID はビルド時には埋め込まない。レジストリから動的に取得する。
 
@@ -548,7 +568,8 @@ GAS トリガー（`gas/alert_mailer.gs`）が `alerts` シートを監視し、
 
 ## 13. 既存運用スプレッドシートの取り込み手順（運用ノート）
 
-1. 案件主に依頼して、対象スプレッドシートを **サービスアカウントまたは閲覧ユーザの Google アカウント** に共有してもらう。
+1. Proxy では案件主に依頼して対象スプレッドシートを **閲覧 GAS の実行者** に共有してもらう。
+   FTP の書き込み用サービスアカウントへの共有とは別。従来の直接読み取りでは全閲覧者への共有が必要。
 2. レジストリ `sources` に行を追加（`schemaType` を選び、`spreadsheetId` / `sheetName` / `headerRow` / `accessMode` を入力）。
 3. レジストリ `acl` に閲覧者を追加。
 4. SPA を再読み込みして `sources` ドロップダウンに表示されることを確認。

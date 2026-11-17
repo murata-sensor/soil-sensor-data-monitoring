@@ -18,16 +18,17 @@
 3. 左メニューの「Security」セクションから「**Secrets and variables**」→「**Actions**」をクリック
 4. 画面上部の **「Variables」タブ** に切り替える（Secrets タブと並んでいる）
 
-### 5 件登録する
+### 用途に応じて登録する
 
-緑色の「**New repository variable**」を押して、1 件ずつ追加:
+「**New repository variable**」を押して、1 件ずつ追加。
+Firebase を使う場合は、この表に加えて [次節の Firebase 用変数](#firebase-authentication任意)を登録する:
 
 | Name（このまま入力） | 値の例・取得方法 |
 |----------------------|------------------|
-| `VITE_GOOGLE_CLIENT_ID` | [`01_google_setup.md`](01_google_setup.md) 手順 4-2 で控えた OAuth クライアント ID（`xxxxx.apps.googleusercontent.com` の形式） |
-| `VITE_REGISTRY_SPREADSHEET_ID` | [`01_google_setup.md`](01_google_setup.md) 手順 1-4 で控えた Registry スプレッドシートの ID |
+| `VITE_GOOGLE_CLIENT_ID` | 従来認証で使用。[`01_google_setup.md`](01_google_setup.md) 手順 4-2 の OAuth クライアント ID。Firebase では不使用 |
+| `VITE_REGISTRY_SPREADSHEET_ID` | 従来認証で Proxy を使わず直接読む場合に必要。Proxy では GAS 側に Registry ID を設定する |
 | `VITE_BASE_PATH` | 任意。未設定なら `/<リポジトリ名>/` を使用。指定する場合は**前後にスラッシュ必須**。独自ドメインのルートに公開する場合は `/` |
-| `VITE_GAS_PROXY_URL` | 設定・生データの過剰公開防止のため設定を推奨。Mechatrax は必須。[`04_gas_setup.md`](04_gas_setup.md) で閲覧専用プロジェクトに read_proxy をデプロイした WebApp URL（`https://script.google.com/macros/s/.../exec`） |
+| `VITE_GAS_PROXY_URL` | **Firebase・Mechatrax では必須**。従来認証でも推奨。[`04_gas_setup.md`](04_gas_setup.md) の閲覧用 read_proxy の WebApp URL（`https://script.google.com/macros/s/.../exec`） |
 | `VITE_GAS_ADMIN_URL` | （任意）ダッシュボードの `/admin` 画面から Registry を書き換えたい場合のみ。同じく [`04_gas_setup.md`](04_gas_setup.md) でデプロイした admin_api の WebApp URL |
 
 > `VITE_BASE_PATH` を指定する場合は、実際の公開先のパスと一致させること。
@@ -37,6 +38,7 @@
 
 非商用の実証実験で Google ログインを維持しやすくするための追加設定。
 未設定では従来の Google Identity Services 認証を維持する。
+コードの既定値と実環境の設定は別。Firebase では Pages と両 GAS の認証方式を明示して揃える。
 **情報管理の承認後にのみ本番へ適用する。**
 Firebase SDK の依存関係に合わせ、ローカル開発は Node.js 24.12 以上を使う。
 Firebase パッケージに同梱される未使用の Firestore 用 gRPC 依存にも既知の問題があるため、
@@ -46,14 +48,24 @@ Firebase パッケージに同梱される未使用の Firestore 用 gRPC 依存
 
 #### 事前設定
 
-1. Firebase コンソールでプロジェクトを用意する。通常の Authentication・Google ログインだけなら
+1. [Firebase コンソール](https://console.firebase.google.com/)を管理用 Google アカウントで開く。
+   既存の Firebase プロジェクトを選ぶか、プロジェクトを作成するボタンから名前を入力して作成する。
+   通常の Authentication・Google ログインだけなら
    Spark プランで開始でき、Identity Platform、Firestore、Cloud Functions、課金先登録は不要。
-   既存の Google Cloud プロジェクトを使う場合は、その課金設定・OAuth 設定を先に確認する。
-2. Web アプリを登録し、表示される `apiKey`・`projectId`・`authDomain` を控える。
-   Analytics の有効化は不要。これらの Web 設定値は公開値であり、サービスアカウントの秘密鍵ではない。
-3. Authentication → Sign-in method で **Google のみ**有効化し、サポートメールを設定する。
+   Analytics・Gemini の有効化も必須ではない。既存の Google Cloud プロジェクトを使う場合は、その課金設定・OAuth 設定を先に確認する。
+2. プロジェクトのトップ画面で **`</>` の Web アイコン**を押す。
+   見つからなければ **プロジェクトの概要の横の歯車 → プロジェクトの設定 → 全般 → マイアプリ → アプリを追加 → Web**。
+   ニックネーム（例: `Soil Sensor Monitor`）を入力して「アプリを登録」を押す。Firebase Hosting の設定は不要で、GitHub Pages は移動しない。
+   表示された `const firebaseConfig = { ... }` の `apiKey`・`projectId`・`authDomain` を控える。
+   コピーするのは引用符内の値だけ。SDK はリポジトリへ導入済みなので、画面の `npm install firebase` を改めて行う必要はない。
+   後からは **プロジェクトの設定 → 全般 → マイアプリ → 対象 Web アプリ → SDK の設定と構成**で確認できる。
+   Web 設定値は公開値であり、サービスアカウントの秘密鍵ではない。
+3. 左メニュー **構築（Build）→ Authentication** を開き、「始める」が表示されれば押す。
+   **Sign-in method（ログイン方法）→ Google → 有効にする**で、利用者に表示してよい公開名とサポートメールを指定して保存する。
+   他のログイン方法は有効化しなくてよい。
 4. Authentication → Settings → Authorized domains に `<owner>.github.io` を登録する。
    ローカル試験に使う場合は `localhost` も明示的に登録する。
+   ドメインはホスト名だけ（例: `example.github.io`）。`https://` やリポジトリ名・末尾の `/` は付けず、既存のドメインも削除しない。
    Google 側の OAuth クライアントに追加設定が必要な場合は、Firebase の案内に従い、
    `https://<authDomain>/__/auth/handler` を承認済みリダイレクト URI に設定する。
 5. 閲覧 Proxy を必ず用意する。Firebase モードは Sheets の直接読み取りを使わず、
@@ -69,6 +81,9 @@ Firebase パッケージに同梱される未使用の Firestore 用 gRPC 依存
 | `VITE_FIREBASE_API_KEY` | Web アプリの `apiKey` |
 | `VITE_FIREBASE_PROJECT_ID` | Web アプリの `projectId` |
 | `VITE_FIREBASE_AUTH_DOMAIN` | Web アプリの `authDomain`（通常 `<projectId>.firebaseapp.com`、URL ではなくホスト名） |
+| `VITE_GAS_PROXY_URL` | 閲覧用 GAS の既存 WebApp URL（`/exec`）。管理用 URL と取り違えない |
+
+値に引用符や末尾のカンマを含めない。管理画面も使う場合は `VITE_GAS_ADMIN_URL` も必要。
 
 `VITE_GOOGLE_CLIENT_ID` は従来モード用。Firebase モードは Firebase プロジェクト側の Google プロバイダー設定を使用する。
 API キーを使っていても、閲覧許可の判定は Registry の `users`・`acl`、管理操作はさらに `ADMIN_ALLOWED_EMAILS` で行う。
@@ -94,13 +109,21 @@ Firebase には認証用の利用者情報が保存されるが、この変更�
 #### 切替・確認・切り戻し
 
 1. Registry をバックアップし、現在の Pages コミット・GAS の公開版・設定を控える。
-2. 一時的に利用を止め、[GAS 側の Firebase 設定](../gas/README.md#firebase-authentication任意)を
-   管理・閲覧の両プロジェクトに適用し、新しいバージョンを公開する。
-3. 上記 Variables を設定し、Pages を再ビルド・公開する。新旧トークンを同時に許可する切替ではないため、
-   GAS と Pages の反映の間はログイン・API 利用に失敗する。
-4. 新方式へ移行した端末では旧 `soil_user`・`soil_login_at`・Sheets 用トークンを削除し、
+2. 上記 Firebase 用変数を登録するが、既存環境の `VITE_AUTH_PROVIDER` はまだ `google` にしておく。
+   Firebase 対応コードが GitHub に反映されていることを確認し、従来認証のまま Pages を公開する。
+3. [GAS の手順](04_gas_setup.md#b-2-スクリプトプロパティ)に従い、管理・閲覧の両プロジェクトで
+   API 本体と `firebase_auth.gs`、Firebase 用プロパティを準備する。`AUTH_PROVIDER=google` のまま
+   **デプロイを管理 → 鉛筆アイコン → 新バージョン → デプロイ**で更新し、従来のログイン・データ表示を確認する。
+   既存 URL を維持するため「新しいデプロイ」は選ばない。
+4. 他の利用者が作業していないタイミングで利用を一時停止し、**両 GAS の `AUTH_PROVIDER` を `firebase` に変更して保存**する。
+   コードは公開済みなので、このプロパティ変更のための再デプロイは不要。
+5. GitHub の **`VITE_AUTH_PROVIDER` も `firebase` に変更**し、
+   **Actions → deploy-pages → Run workflow → main → Run workflow** で新しく実行する。
+   検査・ビルド・公開の全ジョブの成功を確認する。
+   新旧トークンを同時に許可する切替ではないため、GAS の変更から Pages の公開完了までは旧画面の API 通信が失敗する。
+6. 新方式の画面起動時に旧 `soil_user`・`soil_login_at`・Sheets 用トークンを端末から削除し、
    Firebase で一度ログインし直す。Google 側の過去の Sheets 許可は自動で取り消さない。
-5. 個人端末のチェックあり／共有端末のチェックなしで、再読み込み・タブ終了・ブラウザー再起動・
+7. 個人端末のチェックあり／共有端末のチェックなしで、再読み込み・タブ終了・ブラウザー再起動・
    1時間超の利用・ログアウト後の再表示を確認する。別タブ同期、一般閲覧者の ACL、無効化、
    管理者の読み書き、ポップアップ拒否・通信失敗も別途確認する。
 
@@ -112,6 +135,21 @@ Firebase のログイン保存情報は旧画面では使わないが、将来 F
 
 コードのテストだけでは実アカウント・ブラウザーごとの挙動や公開先の設定まで検証できないため、
 本番切替は上記の実機確認と情報管理の承認をもって完了とする。
+
+#### 運用確認記録（2026-11-17時点）
+
+実証実験環境では 2026-11-16 に Firebase + 閲覧 Proxy へ切替済み。
+以下は利用者からの確認報告であり、すべての端末・ブラウザー・失効条件を網羅する試験結果ではない。
+
+| 日付 | 確認できたこと |
+| --- | --- |
+| 2026-11-16 | Firebase での実アカウントのログイン、データ表示、ページ再読み込み後のログイン維持 |
+| 2026-11-16 | ログアウト後の再ログイン |
+| 2026-11-17 | 翌日の PC 起動・Chrome 再起動後も、ログイン操作なしで画面を表示 |
+
+追加確認として、共有端末相当の未チェック利用でのタブ終了、別タブでの利用者変更、Chrome 以外のブラウザー、
+無効化・失効時の拒否、明示的に1時間以上経過させた後の新しいデータ取得を残す。
+翌日の画面表示だけで、期限更新やすべての API 操作を個別に検証済みとは扱わない。
 
 ---
 
@@ -180,6 +218,9 @@ URL の正確な値は **Settings → Pages 画面の上部** にも表示され
 
 ## 5. OAuth クライアントに公開 URL を登録する（最初の 1 回だけ）
 
+**この節は従来の Google Identity Services 認証向け**。
+Firebase では [事前設定](#事前設定)の Authorized domains と、Firebase 側が案内する OAuth 設定を確認する。
+
 このまま開くと「アクセスがブロックされました」と Google にはじかれる。
 [`01_google_setup.md`](01_google_setup.md) 手順 4-1 で作った OAuth クライアントの
 **「承認済みの JavaScript 生成元」** に、**手順 4 で表示された公開 URL のオリジン部分**（パスを除いたもの）を追加する。
@@ -196,7 +237,8 @@ URL の正確な値は **Settings → Pages 画面の上部** にも表示され
 ## 6. 動作確認
 
 1. 公開 URL を開く
-2. Google ログイン画面が出る → 自分の Google アカウントを選ぶ
+2. Firebase では保存チェックの初期値が未チェックであることを確認し、「Googleでログイン」→ 自分のアカウントを選ぶ。
+   既に有効な保存セッションがあればログイン画面を省略してよい
 3. ログイン成功後、Registry の `sources` で許可されたデータソースのドロップダウンが表示されればOK
 4. データソースを選ぶとグラフが描画される
 
@@ -230,7 +272,20 @@ Pages は対象変更を取り消すコミットを main に反映して再公�
 
 ### 「アクセスがブロックされました」
 
-→ 手順 5 の JavaScript 生成元の登録漏れ。または OAuth 同意画面のテストユーザーに自分のメールが入っていない（[`01_google_setup.md`](01_google_setup.md) 手順 3-3）。
+→ Firebase では Google プロバイダーの有効化と、Firebase 側が案内する OAuth クライアント・同意画面の設定を確認する。
+従来認証では手順 5 の JavaScript 生成元や、[`01_google_setup.md`](01_google_setup.md) 手順 3-3 のテストユーザーを確認する。
+
+### Firebase のログイン画面でエラーになる
+
+| 表示・症状 | 確認する設定 |
+| --- | --- |
+| Firebase の設定が不足している | Firebase の3変数と `VITE_GAS_PROXY_URL`。登録後は Pages を再ビルド |
+| 公開ドメインが許可されていない | Firebase Authentication → Settings → Authorized domains に公開先のホスト名を追加 |
+| ポップアップがブロックされた | このサイトのポップアップをブラウザーで許可 |
+| ログイン情報を保存できない | ブラウザーの保存設定・空き容量。共有端末では無理に永続保存しない |
+| ログインできるが API が拒否する | 両 GAS の方式・Firebase プロジェクト・API キー・ヘルパーの公開版を照合し、Registry の有効状態・ACL も確認 |
+
+エラー調査で ID トークン・秘密鍵をチャットやログへ貼り付けない。表示文と発生操作を記録する。
 
 ### ログインはできるが「アクセス権がありません」と表示される
 
@@ -244,12 +299,14 @@ Pages は対象変更を取り消すコミットを main に反映して再公�
 
 ### 設定を変えたのに反映されない
 
-→ ビルド時に値が埋め込まれるため、**Variables を変えたら手動で Re-run workflow** が必要。
+→ ビルド時に値が埋め込まれるため、**Variables を変えたら Actions → deploy-pages → Run workflow** で新しく実行する。
+GAS の Script Properties は保存で反映されるが、GAS コード自体の変更は公開版の更新が必要。
 
 ### 「リソースの読み込みエラー」（Sheets API 403）
 
-→ そのスプレッドシートが `accessMode=direct` で、かつ自分の Google アカウントに **Drive 上で「閲覧者」共有** されていない。
-   ユーザー（案件主）に共有を依頼するか、`accessMode=proxy` への切替を検討する。
+→ 従来認証で Proxy 未設定の直接読み取りに限り、閲覧者自身への Drive 共有を確認する。
+Firebase は直接読み取りを使わない。古い画面が残っていないか確認し、
+Proxy の失敗なら閲覧 GAS 実行者への共有・認証設定・Registry の許可を確認する。
 
 ---
 

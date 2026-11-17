@@ -15,6 +15,22 @@ Registry スプレッドシートの 5 つのシート（`sources` / `users` / `
 ただし、保存中のログアウトは Google 側で始まった書き込みを取り消すものではありません。
 保存が完了したか不明な場合は、再ログイン後に最新の設定を読み込んで確認してください。
 
+## ログイン状態の保存と利用停止（Firebase）
+
+- ログイン画面の「この端末にログイン状態を保存する」は初期値未チェック。
+  未チェックはタブ単位、チェック時は同じブラウザーで原則ログアウトまで保持する。
+  共有端末では未チェックとし、利用後に明示ログアウトする。表示設定はログイン情報とは別に端末へ残る。
+- 既に保存済みのログインは SDK が復元する。保存方法を変える場合は、一度ログアウトしてから選び直す。
+- 通常の期限更新は SDK が行い、One Tap での再操作や閲覧者ごとの Sheets 読み取り権限の追加同意は求めない。
+  初回同意・アカウント無効化・セッション失効・保存データ削除などでは再ログインが必要。
+- **Firebase による本人確認と Registry の利用許可は別**。
+  Google ログインが成功して認証ユーザーが作られても、`users` の有効な登録と閲覧権限がなければデータは取得できない。
+- 利用停止は `users.enabled=FALSE`、特定ソースの停止は該当 `acl` 行の削除で行う。
+  Proxy は次の API 要求から拒否する。表示・ダウンロード済みのデータや、端末の Firebase ログイン情報を遠隔削除するものではない。
+
+初期設定と認証方式の切替は [Pages の手順](03_pages_deploy.md#firebase-authentication任意)、
+[GAS の手順](04_gas_setup.md#b-2-スクリプトプロパティ)を参照。
+
 ---
 
 ## 0. アクセス制御の整理（よく勘違いされるところ）
@@ -23,7 +39,7 @@ Registry スプレッドシートの 5 つのシート（`sources` / `users` / `
 
 | シート | 役割 |
 | --- | --- |
-| `users` | 「**このメールアドレスはログインできる/できない**」と「**ロール (admin / viewer)**」だけを決める |
+| `users` | 「**本人確認後にアプリを利用できるか**」と「**ロール (admin / viewer)**」を決める |
 | `sources` | 「**どんなデータ源がシステムに存在するか**」をカタログする |
 | `acl` | 「**どの user がどの source を見られるか**」を 1 件ずつ許可する |
 
@@ -56,7 +72,7 @@ viewer ロールのユーザーは **`acl` に行を入れない限り 1 つも�
 | --- | --- | --- |
 | `email` | `you@example.com` | Google アカウントのメール（小文字推奨） |
 | `role` | `admin` または `viewer` | `admin` は全データ + `/admin` 画面アクセス。`viewer` は acl 許可分のみ |
-| `enabled` | `TRUE` / `FALSE` | `FALSE` でログイン自体を拒否 |
+| `enabled` | `TRUE` / `FALSE` | `FALSE` でアプリの API 利用を拒否。Firebase の本人確認成功・ログイン保持とは別 |
 
 同じメールは1行だけ登録してください。前後の空白と大文字・小文字を除いて同じメールが複数行あると、
 管理・閲覧 API ともその利用者を拒否します。`email`・`role`・`enabled` の列もそれぞれ1列だけ必要です。
@@ -97,6 +113,7 @@ Logger が書き込んでいる Spreadsheet をデータソースとして登録
 - `proxy` （推奨）: GAS WebApp 経由で読む。Drive 共有は **GAS のオーナー（あなた）1 アカウント** だけで済む。
   代わりに [`04_gas_setup.md`](04_gas_setup.md) の `read_proxy` をデプロイし、`VITE_GAS_PROXY_URL` を設定する必要がある。
 - `direct`: Proxy 未設定時のみ、閲覧者ごとの Google アカウントから直接 Sheets API を呼ぶ。
+  従来認証専用。Firebase モードでは `VITE_GAS_PROXY_URL` が必須で、直接読み取りはしない。
   スプレッドシート全体の閲覧を許可する運用専用で、アプリの ACL は直接アクセスを制限しない。
   位置情報等を含む Mechatrax データには利用できない。
 
@@ -149,7 +166,7 @@ Logger が書き込んでいる Spreadsheet をデータソースとして登録
 ### 例D: viewer の権限を剥奪したい
 
 選択肢A: `acl` から該当行を削除（特定ソースだけ）
-選択肢B: `users` の `enabled` を `FALSE`（ログイン自体を止める）
+選択肢B: `users` の `enabled` を `FALSE`（アプリの API 利用を止める。Firebase のログイン自体とは別）
 
 ### 例E: 既存運用中の M5Stack スプレッドシートを取り込む（オンボーディング）
 
@@ -157,8 +174,8 @@ Logger が書き込んでいる Spreadsheet をデータソースとして登録
 2. 列構成が SPEC §4.2 の M5Stack スキーマ（A〜M）と一致しているか確認。
    違えば [`04_gas_setup.md`](04_gas_setup.md) の `addM5StackHeader` で揃える
 3. アクセス方式を決める:
-   - 各ユーザー個別にスプレッドシートを共有してもよい → `accessMode=direct`
-   - Drive 共有を絞りたい → `accessMode=proxy`（read_proxy デプロイ要）
+   - Firebase または閲覧者への共有を避ける推奨構成 → `accessMode=proxy`（read_proxy デプロイ要）
+   - 従来認証で Proxy を設定せず、シート全体を各閲覧者に共有する場合のみ → `accessMode=direct`
 4. ユーザーに依頼して共有してもらう（direct なら全閲覧者、proxy なら GAS オーナーのみ）
 5. Registry の `sources` に行を追加
 6. 必要な閲覧者を `acl` に追加（例A 参照）
@@ -398,10 +415,11 @@ CSV ダウンロードや画面表示には出てきません。
 
 | 症状 | 原因の可能性 | 対応 |
 | --- | --- | --- |
-| ログインできない | `users` に行が無い / `enabled=FALSE` | 行追加 or `TRUE` に |
+| Google ログイン自体でエラー | プロバイダー・ドメイン・ポップアップ等の設定 | [Pages のトラブルシューティング](03_pages_deploy.md#トラブルシューティング) |
+| ログイン後にアプリの利用を拒否される | `users` に行が無い / `enabled=FALSE` | 利用許可を確認して行追加 or `TRUE` に |
 | ログインできるが何も見えない（viewer） | `acl` に許可行が無い | 例A の手順 3 |
 | `/admin` が開けない | `users.role` が `viewer` | `admin` に変更 |
 | ドロップダウンに出ない（admin なのに） | `sources.enabled = FALSE` | `TRUE` に |
-| 選択するとエラー | `direct` のソースを Drive 共有していない | 例A 手順 4、または `proxy` に切替 |
+| 選択するとエラー | Proxy では GAS 実行者、従来の直接読み取りでは閲覧者に Drive 共有がない | 使用方式に合う共有を確認 |
 | `proxy` ソースがエラー | `VITE_GAS_PROXY_URL` 未設定 or read_proxy 未デプロイ | [`04_gas_setup.md`](04_gas_setup.md) |
 | 列が空欄ばかり | スプレッドシートの実ヘッダ名がアダプタの `HEADER_MAP` と不一致 | ヘッダを揃える、または将来の `sources.columnMap`（v2.1）対応待ち |

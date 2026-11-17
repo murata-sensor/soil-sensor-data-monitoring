@@ -3,12 +3,13 @@
 このページは Google Apps Script（**GAS**、Googleが提供するJavaScript実行環境）を
 スプレッドシートに紐付けて WebApp として公開する手順です。
 
-v2 では GAS プロジェクトを **2 種類** に分けて使います:
+GAS は用途ごとにプロジェクトを分けます。特に Registry の管理 API と閲覧 API は、それぞれ別プロジェクトが必要です:
 
 | 種類 | バインドするスプレッドシート | 配置するファイル | 用途 |
 | ---- | ---------------------------- | ---------------- | ---- |
 | **(A) 受信用** | M5Stack / Mechatrax / PC の **各データ用スプレッドシート** に1つずつ | `m5stack_receiver.gs` / `mechatrax_receiver.gs`（+ `amedas_fetcher.gs`）/ `pc_serial_receiver.gs` | デバイスからの POST を受けて行を追記 |
-| **(B) Registry 用** | 01 で作った **Registry スプレッドシート** に 1 つ | `admin_api.gs`、（`accessMode=proxy` を使う場合のみ）`read_proxy.gs` | 管理画面の書き込み / proxy 読み取り |
+| **(B) Registry 管理用** | Registry にバインド、または ID 指定の独立プロジェクト | `admin_api.gs`（Firebase では + `firebase_auth.gs`） | 管理画面の読み書き |
+| **(B) Registry 閲覧用** | 管理用とは別プロジェクト。同じ Registry を参照 | `read_proxy.gs`（Firebase では + `firebase_auth.gs`） | 閲覧 Proxy。Firebase では必須 |
 | **(C) アラート送信用** | **FTP データ用スプレッドシート** に 1 つ | `alert_mailer.gs` | `alerts` シートを監視してメール送信 |
 
 > 旧 v1 にあった `weather_fetcher.gs`（Open-Meteo）はリポジトリに残っていますが、
@@ -227,8 +228,10 @@ python examples/continuous_log.py --product SLT5009 --port COM3 --address 1,2 `
 ### B-1. ファイルを配置
 
 1. `script.google.com` で管理 API 用と閲覧 API 用のスタンドアロンプロジェクトを別々に作る。
-2. 管理 API 用には `gas/admin_api.gs` だけを配置する。
-3. 閲覧 API 用には `gas/read_proxy.gs` だけを配置する。
+2. 管理 API 用には `gas/admin_api.gs` を配置する。
+3. 閲覧 API 用には `gas/read_proxy.gs` を配置する。
+   Firebase の場合は **両方のプロジェクト**に `gas/firebase_auth.gs` も追加する。
+   ヘルパーを加えても管理・閲覧の API 本体は同じプロジェクトへまとめない。
 4. それぞれに、次の Script Properties を登録する。
 
 既存のスプレッドシートにバインドされた単独 API は、`REGISTRY_SPREADSHEET_ID` を省略して継続利用できます。
@@ -238,10 +241,11 @@ python examples/continuous_log.py --product SLT5009 --port COM3 --address 1,2 `
 既存プロジェクトを閲覧 Proxy 用として使い、管理 API 用のプロジェクトを1つ追加する方法で分離できます。
 同じ Registry を使うため、分離のために新しいスプレッドシートを作る必要はありません。
 
-まず既存コードと公開版番号を控え、新しい管理 API 用プロジェクトにローカルの更新済み `gas/admin_api.gs` だけを配置します。
-次節の3項目を設定して WebApp を配備し、`/exec` URL を控えます。この段階では既存の公開版・設定・接続先を変更しません。
+まず既存コードと公開版番号を控え、新しい管理 API 用プロジェクトにローカルの更新済み `gas/admin_api.gs` を配置します。
+Firebase では `gas/firebase_auth.gs` も配置します。
+次節から使用する認証方式に必要な項目を設定して WebApp を配備し、`/exec` URL を控えます。この段階では既存の公開版・設定・接続先を変更しません。
 
-その後、設定編集を止めて切り替えます。既存プロジェクトの API を更新済み `gas/read_proxy.gs` だけに整理し、
+その後、設定編集を止めて切り替えます。既存プロジェクトの API 本体を更新済み `gas/read_proxy.gs` に整理し、Firebase の場合はヘルパーも残して、
 必要な Script Properties を確認して公開版を更新します。トリガーや別用途の処理が入っている場合は、削除・保存前に影響を確認してください。
 GitHub Variables の管理 URL を新しい管理 API の URL にし、閲覧 URL も対応する Proxy の URL と照合して、Pages を更新します。
 旧管理画面と新管理 API では保存方法が異なるため、GAS と画面の切り替え中は管理操作を再開しないでください。
@@ -252,7 +256,27 @@ GitHub Variables の管理 URL を新しい管理 API の URL にし、閲覧 UR
 | --- | --- | --- |
 | `REGISTRY_SPREADSHEET_ID` | Registry スプレッドシートの ID | スタンドアロンの両 API で必須。実際の ID は公開リポジトリに保存しない |
 | `ADMIN_ALLOWED_EMAILS` | `you@example.com,prof@example.com` | 管理 API だけに登録。対象者は `users` でも `role=admin`・`enabled=TRUE` が必要 |
-| `GOOGLE_OAUTH_CLIENT_ID` | `01_google_setup.md` 手順 4-2 のフロントと同じ Client ID | 両 API で必須。未設定・異なる audience・期限切れ・未確認メールは拒否 |
+| `AUTH_PROVIDER` | `firebase` または `google` | 両 API の方式を Pages の `VITE_AUTH_PROVIDER` と揃える。未設定は `google` |
+| `FIREBASE_PROJECT_ID` | Firebase Web アプリの `projectId` | Firebase では両 API に必須 |
+| `FIREBASE_API_KEY` | 同じ Firebase プロジェクトの API キー | Firebase では両 API に必須。GAS から利用できる制限設定のもの |
+| `GOOGLE_OAUTH_CLIENT_ID` | `01_google_setup.md` 手順 4-2 のフロントと同じ Client ID | 従来認証で両 API に必須。Firebase では不使用。切り戻し用に残してよい |
+
+登録操作は **歯車 → プロジェクトの設定 → スクリプト プロパティ**。
+Firebase の `projectId` と Web 用 `apiKey` は [Firebase コンソールで取得](03_pages_deploy.md#事前設定)する。
+API キーにブラウザーのリファラー制限を付けている場合は GAS では使えないため、
+同じプロジェクトでサーバー照会用キーを用意し、Identity Toolkit API のみに API 制限を設定する。
+Firebase のトークン検証と、Registry の `users`・`acl`・管理者許可一覧による認可は別々に行う。
+
+#### 従来認証から Firebase へ移行する場合
+
+1. 最初は `AUTH_PROVIDER=google` のまま、両 API のコードと Firebase ヘルパー・プロパティを準備する。
+2. 両 API を「デプロイを管理 → 編集 → 新バージョン」で更新し、従来のログイン・データ表示を確認する。
+3. 利用を一時停止し、両 API の `AUTH_PROVIDER` を `firebase` に変更して保存する。
+   **このプロパティ変更だけなら再デプロイ不要**。コードの変更には再デプロイが必要。
+4. GitHub の `VITE_AUTH_PROVIDER` も `firebase` にし、Pages を再ビルド・公開する。
+   [Pages の切替手順](03_pages_deploy.md#切替確認切り戻し)で必要な変数と完了確認を行う。
+
+設定・コードの不一致中は API が拒否する。新旧の認証方式を同時許可する切替ではないため、利用停止中に揃えて反映する。
 
 ### B-3. admin_api を WebApp デプロイ
 

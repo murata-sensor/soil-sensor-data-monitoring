@@ -90,9 +90,12 @@ Registry の `sources` シートに 1 行登録する必要がある。
 
 | sourceId | displayName | schemaType | spreadsheetId | sheetName | headerRow | tz | accessMode | enabled | notes |
 |----------|-------------|------------|---------------|-----------|-----------|-----|------------|---------|-------|
-| `src-remote-a` | `A圃場` | `remote-ftp` | （`FTP_SPREADSHEET_ID` と同じ） | `sensor_9am` | `1` | `Asia/Tokyo` | `direct` | `TRUE` | |
+| `src-remote-a` | `A圃場` | `remote-ftp` | （`FTP_SPREADSHEET_ID` と同じ） | `sensor_9am` | `1` | `Asia/Tokyo` | `proxy` | `TRUE` | |
 
 4. ダッシュボードを使う閲覧者の `acl` 行を追加（[`05_admin_guide.md`](05_admin_guide.md) を参照）
+5. 閲覧 GAS の実行者にもデータ用スプレッドシートを共有し、[閲覧 Proxy](04_gas_setup.md#b-4-read_proxy-を-webapp-デプロイ推奨)と
+   `VITE_GAS_PROXY_URL` を設定する。Firebase 認証では Proxy が必須。
+   FTP 書き込み用サービスアカウントへの共有だけでは、別アカウントで実行する閲覧 GAS の権限にはならない。
 
 ---
 
